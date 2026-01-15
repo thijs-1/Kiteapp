@@ -95,6 +95,13 @@ class PipelineOrchestrator:
 
         return bytes_freed
 
+    def all_spots_processed(self, cell) -> bool:
+        """Check if all spots in a cell already have histograms."""
+        for spot in cell.spots:
+            if not self.histogram_exists(spot.spot_id):
+                return False
+        return True
+
     def process_cell(self, cell_index: int, cell) -> dict:
         """
         Process a single grid cell.
@@ -108,7 +115,14 @@ class PipelineOrchestrator:
             "spots_skipped": 0,
             "download_skipped": False,
             "bytes_freed": 0,
+            "cell_skipped": False,
         }
+
+        # Skip entire cell if all spots already have histograms
+        if self.skip_existing_histograms and self.all_spots_processed(cell):
+            stats["spots_skipped"] = len(cell.spots)
+            stats["cell_skipped"] = True
+            return stats
 
         # Get expanded bounding box for download
         download_bbox = self.grid_service.get_download_bbox(cell)
@@ -180,6 +194,7 @@ class PipelineOrchestrator:
         total_stats = {
             "cells_total": len(cells_with_spots),
             "cells_processed": 0,
+            "cells_skipped": 0,
             "spots_processed": 0,
             "spots_skipped": 0,
             "downloads_skipped": 0,
@@ -197,11 +212,14 @@ class PipelineOrchestrator:
             total_stats["spots_processed"] += cell_stats["spots_processed"]
             total_stats["spots_skipped"] += cell_stats["spots_skipped"]
             total_stats["bytes_freed"] += cell_stats["bytes_freed"]
+            if cell_stats.get("cell_skipped"):
+                total_stats["cells_skipped"] += 1
             if cell_stats["download_skipped"]:
                 total_stats["downloads_skipped"] += 1
 
         print("\nPipeline complete!")
         print(f"  Cells processed: {total_stats['cells_processed']}")
+        print(f"  Cells skipped (already done): {total_stats['cells_skipped']}")
         print(f"  Spots processed: {total_stats['spots_processed']}")
         print(f"  Spots skipped: {total_stats['spots_skipped']}")
         print(f"  Downloads skipped: {total_stats['downloads_skipped']}")
