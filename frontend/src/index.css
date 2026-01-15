@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Leaflet container full screen */
+.leaflet-container {
+  height: 100vh;
+  width: 100vw;
+}
+
+/* Custom scrollbar for filter panel */
+.overflow-y-auto::-webkit-scrollbar {
+  width: 6px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-track {
+  background: #f1f1f1;
+  border-radius: 3px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb {
+  background: #FF69B4;
+  border-radius: 3px;
+}
+
+.overflow-y-auto::-webkit-scrollbar-thumb:hover {
+  background: #FF1493;
+}
+
+/* RC Slider customization */
+.rc-slider-mark-text {
+  font-size: 10px;
+  color: #666;
+}
+
+/* Chart container */
+.chart-container {
+  position: relative;
+  height: 100%;
+  width: 100%;
+}

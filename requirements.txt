@@ -1,0 +1,18 @@
+# Data Pipelines
+numpy>=1.26.0
+pandas>=2.2.0
+xarray>=2024.1.0
+netCDF4>=1.6.5
+reverse_geocoder>=1.5.1
+cdsapi>=0.7.0
+tqdm>=4.66.0
+attrs>=23.2.0
+
+# Backend
+fastapi>=0.109.0
+uvicorn>=0.27.0
+pydantic>=2.5.0
+
+# Testing
+pytest>=8.0.0
+httpx>=0.26.0

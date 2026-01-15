@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(C:/Users/thijs/Kiteapp3/venv/Scripts/python.exe:*)",
+      "Bash(C:/Users/thijs/Kiteapp3/venv/Scripts/pip.exe install:*)",
+      "Bash(npm install)",
+      "Bash(npx tsc:*)"
+    ]
+  }
+}
