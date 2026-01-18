@@ -1,6 +1,6 @@
 # Kiteapp Deployment Guide - Ubuntu + Nginx
 
-Comprehensive guide for deploying Kiteapp on an Ubuntu server with nginx (no containerization).
+Step-by-step guide for deploying Kiteapp on an Ubuntu server with nginx (no containerization).
 
 ## Table of Contents
 
@@ -24,14 +24,13 @@ Comprehensive guide for deploying Kiteapp on an Ubuntu server with nginx (no con
 - Minimum 2GB RAM (4GB+ recommended for data processing)
 - 10GB+ free disk space (more if running data pipeline)
 - Sudo access
-- Domain name pointing to server IP (for production deployment)
+- Domain name pointing to server IP
 
 ### Pre-deployment Checklist
 
 - [ ] Server SSH access configured
-- [ ] Domain DNS records configured
-- [ ] Firewall rules planned
-- [ ] SSL certificate strategy decided
+- [ ] Domain DNS records configured (A record pointing to server IP)
+- [ ] Firewall allows HTTP/HTTPS traffic
 
 ---
 
@@ -69,18 +68,17 @@ nginx -v
 ```bash
 # Create dedicated user for running the application
 sudo useradd -m -s /bin/bash kiteapp
-sudo usermod -aG sudo kiteapp  # Optional: if user needs sudo access
 ```
 
 ### 4. Setup Application Directory
 
 ```bash
-# Switch to application user
-sudo su - kiteapp
-
 # Create application directory
 sudo mkdir -p /var/www/kiteapp
 sudo chown kiteapp:kiteapp /var/www/kiteapp
+
+# Switch to application user
+sudo su - kiteapp
 cd /var/www/kiteapp
 ```
 
@@ -115,19 +113,20 @@ pip install -r requirements.txt
 # Install production server
 pip install gunicorn
 
-# Test backend
+# Test backend (optional)
 python -m backend.main  # Should start on port 8000
 # Press Ctrl+C to stop
 ```
 
 ### 3. Configure Backend Environment
 
+Create environment file:
+
 ```bash
-# Create environment file
 nano /var/www/kiteapp/.env
 ```
 
-Add configuration (adjust as needed):
+Add configuration (adjust domain as needed):
 
 ```bash
 # .env file
@@ -136,10 +135,10 @@ KITEAPP_API_TITLE=Kiteapp API
 KITEAPP_API_VERSION=1.0.0
 ```
 
-**Note:** Update `backend/config.py` to load CORS origins from environment:
+Update `backend/config.py` to load CORS origins from environment or update the hardcoded value:
 
 ```python
-cors_origins: list = ["https://yourdomain.com"]  # Update this line
+cors_origins: list = ["https://yourdomain.com"]  # Update this
 ```
 
 ### 4. Frontend Build
@@ -157,7 +156,7 @@ npm run build
 # This creates frontend/dist/ directory with static files
 ```
 
-### 5. Data Files Deployment
+### 5. Verify Data Files
 
 Ensure processed data files are present:
 
@@ -179,22 +178,13 @@ If data files are missing, either:
 
 ## Nginx Configuration
 
-### 1. Understanding Multi-App Setup
-
-Since another app is already running on the server, we'll configure nginx to:
-- Serve both applications on the same server
-- Use different subdomains or paths
-- Proxy API requests to the backend
-- Serve static frontend files
-
-### 2. Create Nginx Configuration
+### 1. Create Nginx Configuration File
 
 ```bash
-# Create configuration file
 sudo nano /etc/nginx/sites-available/kiteapp
 ```
 
-**Option A: Subdomain Setup** (Recommended)
+### 2. Basic Configuration
 
 ```nginx
 # /etc/nginx/sites-available/kiteapp
@@ -203,7 +193,7 @@ sudo nano /etc/nginx/sites-available/kiteapp
 server {
     listen 80;
     listen [::]:80;
-    server_name kiteapp.yourdomain.com;
+    server_name yourdomain.com www.yourdomain.com;
 
     # Let's Encrypt challenge location
     location /.well-known/acme-challenge/ {
@@ -219,11 +209,11 @@ server {
 server {
     listen 443 ssl http2;
     listen [::]:443 ssl http2;
-    server_name kiteapp.yourdomain.com;
+    server_name yourdomain.com www.yourdomain.com;
 
     # SSL Configuration (update paths after obtaining certificates)
-    ssl_certificate /etc/letsencrypt/live/kiteapp.yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/kiteapp.yourdomain.com/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers HIGH:!aNULL:!MD5;
     ssl_prefer_server_ciphers on;
@@ -253,9 +243,6 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
         proxy_read_timeout 90;
-
-        # CORS headers (if needed beyond backend)
-        add_header Access-Control-Allow-Origin "https://kiteapp.yourdomain.com" always;
     }
 
     # Static files with caching
@@ -278,36 +265,7 @@ server {
 }
 ```
 
-**Option B: Path-Based Setup**
-
-If you prefer serving from a path (e.g., yourdomain.com/kiteapp):
-
-```nginx
-# Add to existing server block in /etc/nginx/sites-available/yourdomain
-
-# API proxy
-location /kiteapp/api/ {
-    rewrite ^/kiteapp/api/(.*) /$1 break;
-    proxy_pass http://127.0.0.1:8000;
-    proxy_http_version 1.1;
-    proxy_set_header Host $host;
-    proxy_set_header X-Real-IP $remote_addr;
-    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-    proxy_set_header X-Forwarded-Proto $scheme;
-}
-
-# Frontend static files
-location /kiteapp/ {
-    alias /var/www/kiteapp/frontend/dist/;
-    try_files $uri $uri/ /kiteapp/index.html;
-    index index.html;
-}
-```
-
-**Important:** For path-based routing, you'll need to:
-1. Update Vite config to set `base: '/kiteapp/'`
-2. Update frontend API calls to use `/kiteapp/api/`
-3. Rebuild frontend
+**Important:** Replace `yourdomain.com` with your actual domain name throughout the configuration.
 
 ### 3. Enable Site Configuration
 
@@ -424,13 +382,13 @@ sudo systemctl stop kiteapp
 # Restart
 sudo systemctl restart kiteapp
 
-# Reload (graceful restart)
-sudo systemctl reload kiteapp
-
 # View status
 sudo systemctl status kiteapp
 
-# View logs
+# View logs (live)
+sudo journalctl -u kiteapp -f
+
+# View recent logs
 sudo journalctl -u kiteapp -n 100 --no-pager
 sudo tail -f /var/log/kiteapp/error.log
 ```
@@ -439,41 +397,42 @@ sudo tail -f /var/log/kiteapp/error.log
 
 ## SSL/TLS Configuration
 
-### Option 1: Let's Encrypt (Free, Recommended)
+### Using Let's Encrypt (Free, Recommended)
 
 ```bash
 # Install Certbot
 sudo apt install -y certbot python3-certbot-nginx
 
-# Obtain certificate (nginx plugin)
-sudo certbot --nginx -d kiteapp.yourdomain.com
+# Obtain certificate (nginx plugin - easiest method)
+sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
 
-# Or manual mode
-sudo certbot certonly --webroot -w /var/www/certbot -d kiteapp.yourdomain.com
+# Certbot will automatically:
+# - Obtain the certificate
+# - Update nginx configuration
+# - Set up auto-renewal
 
-# Certbot auto-renew (verify it's enabled)
+# Verify auto-renewal is enabled
 sudo systemctl status certbot.timer
 
-# Test renewal
+# Test renewal process
 sudo certbot renew --dry-run
 ```
 
-### Option 2: Manual SSL Certificate
-
-If using a purchased or manually obtained certificate:
+**Alternative: Manual certificate with webroot**
 
 ```bash
-# Copy certificate files to server
-sudo mkdir -p /etc/ssl/certs/kiteapp
-sudo cp fullchain.pem /etc/ssl/certs/kiteapp/
-sudo cp privkey.pem /etc/ssl/private/kiteapp/
+# Create webroot directory
+sudo mkdir -p /var/www/certbot
 
-# Set permissions
-sudo chmod 644 /etc/ssl/certs/kiteapp/fullchain.pem
-sudo chmod 600 /etc/ssl/private/kiteapp/privkey.pem
+# Obtain certificate
+sudo certbot certonly --webroot -w /var/www/certbot \
+    -d yourdomain.com -d www.yourdomain.com
 
-# Update nginx configuration with correct paths
-# Then reload nginx
+# Certificates will be placed in:
+# /etc/letsencrypt/live/yourdomain.com/fullchain.pem
+# /etc/letsencrypt/live/yourdomain.com/privkey.pem
+
+# Reload nginx after certificate is obtained
 sudo systemctl reload nginx
 ```
 
@@ -481,7 +440,7 @@ sudo systemctl reload nginx
 
 ## Data Pipeline Setup
 
-If you need to run the data pipeline on the production server:
+If you need to run the data pipeline on the production server to generate or update data:
 
 ### 1. CDS API Configuration
 
@@ -490,14 +449,14 @@ If you need to run the data pipeline on the production server:
 nano ~/.cdsapirc
 ```
 
-Add credentials:
+Add your Copernicus CDS API credentials:
 
 ```yaml
 url: https://cds.climate.copernicus.eu/api
 key: YOUR_UID:YOUR_API_KEY
 ```
 
-Set permissions:
+Set proper permissions:
 
 ```bash
 chmod 600 ~/.cdsapirc
@@ -510,21 +469,25 @@ chmod 600 ~/.cdsapirc
 cd /var/www/kiteapp
 source venv/bin/activate
 
-# Test with one cell
+# Test with one grid cell first
 python -m data_pipelines.main --max-cells 1
 
-# Full run with cleanup
+# Full pipeline run with cleanup
 python -m data_pipelines.main --cleanup
 ```
 
+**Note:** The full pipeline takes significant time and bandwidth. Consider running data pipeline locally and uploading processed files instead.
+
 ### 3. Schedule Regular Updates (Optional)
 
+If you want monthly data updates:
+
 ```bash
-# Create cron job for monthly updates
+# Edit crontab as kiteapp user
 crontab -e
 ```
 
-Add line (runs first of each month at 2 AM):
+Add this line (runs first of each month at 2 AM):
 
 ```cron
 0 2 1 * * cd /var/www/kiteapp && /var/www/kiteapp/venv/bin/python -m data_pipelines.main --cleanup >> /var/log/kiteapp/pipeline.log 2>&1
@@ -542,28 +505,30 @@ Add line (runs first of each month at 2 AM):
 # Check service status
 sudo systemctl status kiteapp
 
-# Check logs
+# Check logs for errors
 sudo journalctl -u kiteapp -n 50 --no-pager
 sudo tail -f /var/log/kiteapp/error.log
 
 # Common issues:
 # - Port 8000 already in use: sudo lsof -i :8000
 # - Missing data files: ls -la /var/www/kiteapp/data/processed/
-# - Python environment: /var/www/kiteapp/venv/bin/python --version
+# - Wrong Python version: /var/www/kiteapp/venv/bin/python --version
+# - Missing dependencies: source venv/bin/activate && pip install -r requirements.txt
 ```
 
 **502 Bad Gateway:**
 
 ```bash
-# Backend not running
+# Check if backend is running
 sudo systemctl status kiteapp
 
-# Port mismatch - verify nginx proxy_pass matches backend port
-sudo nginx -t
-grep -r "proxy_pass" /etc/nginx/sites-enabled/
+# Verify port configuration matches
+# Backend should be on 127.0.0.1:8000
+# Nginx should proxy to http://127.0.0.1:8000
 
-# SELinux blocking (if enabled)
-sudo setsebool -P httpd_can_network_connect 1
+# Check nginx config
+sudo nginx -t
+grep -r "proxy_pass" /etc/nginx/sites-enabled/kiteapp
 ```
 
 ### Frontend Issues
@@ -573,23 +538,31 @@ sudo setsebool -P httpd_can_network_connect 1
 ```bash
 # Verify build files exist
 ls -la /var/www/kiteapp/frontend/dist/
+ls -la /var/www/kiteapp/frontend/dist/index.html
 
-# Check nginx root path
-sudo nginx -T | grep "root"
+# Check nginx root path is correct
+sudo nginx -T | grep -A 5 "server_name yourdomain.com"
 
-# Rebuild frontend
+# Rebuild frontend if needed
 cd /var/www/kiteapp/frontend
 npm run build
 
-# Check browser console for errors
+# Check browser console (F12) for JavaScript errors
 ```
 
-**API calls failing:**
+**API calls failing (CORS errors):**
 
 ```bash
-# Check CORS configuration in backend/config.py
-# Verify nginx proxy configuration
-# Check browser network tab for blocked requests
+# Update CORS origins in backend/config.py
+# Make sure it matches your domain exactly (including https://)
+
+# Restart backend after config changes
+sudo systemctl restart kiteapp
+
+# Check browser network tab for:
+# - Failed requests
+# - CORS error messages
+# - Blocked requests
 ```
 
 ### Nginx Issues
@@ -598,7 +571,11 @@ npm run build
 
 ```bash
 sudo nginx -t
-# Read error message carefully - usually syntax error or missing file
+# Read the error message carefully - usually indicates:
+# - Syntax error in config file
+# - Missing semicolon
+# - Invalid directive
+# - File path doesn't exist
 ```
 
 **Port already in use:**
@@ -608,35 +585,41 @@ sudo nginx -t
 sudo lsof -i :80
 sudo lsof -i :443
 
-# Check if another nginx instance is running
+# If another nginx process
 ps aux | grep nginx
+sudo systemctl status nginx
 ```
 
 ### SSL Certificate Issues
 
 ```bash
-# Verify certificate files exist
-sudo ls -la /etc/letsencrypt/live/kiteapp.yourdomain.com/
+# Check certificate files exist
+sudo ls -la /etc/letsencrypt/live/yourdomain.com/
 
-# Check certificate expiry
+# View certificate details
 sudo certbot certificates
 
-# Force renewal
+# Check certificate expiry
+echo | openssl s_client -servername yourdomain.com -connect yourdomain.com:443 2>/dev/null | openssl x509 -noout -dates
+
+# Manually renew if needed
 sudo certbot renew --force-renewal
+sudo systemctl reload nginx
 ```
 
 ### Permission Issues
 
 ```bash
-# Fix ownership
+# Fix application directory ownership
 sudo chown -R kiteapp:kiteapp /var/www/kiteapp
 
 # Fix permissions
 sudo chmod -R 755 /var/www/kiteapp
-sudo chmod -R 644 /var/www/kiteapp/data/processed/*.pkl
+sudo chmod 644 /var/www/kiteapp/data/processed/*.pkl
 
-# Service file permissions
+# Fix service file permissions
 sudo chmod 644 /etc/systemd/system/kiteapp.service
+sudo systemctl daemon-reload
 ```
 
 ### Performance Issues
@@ -646,10 +629,11 @@ sudo chmod 644 /etc/systemd/system/kiteapp.service
 ```bash
 # Check process memory
 top -u kiteapp
+# or
 htop -u kiteapp
 
-# Reduce Gunicorn workers in systemd service
-# Edit /etc/systemd/system/kiteapp.service
+# Reduce Gunicorn workers if needed
+sudo nano /etc/systemd/system/kiteapp.service
 # Change --workers 4 to --workers 2
 sudo systemctl daemon-reload
 sudo systemctl restart kiteapp
@@ -658,30 +642,28 @@ sudo systemctl restart kiteapp
 **Slow API responses:**
 
 ```bash
-# Check backend logs for slow queries
+# Check backend logs for slow requests
 sudo tail -f /var/log/kiteapp/access.log
 
-# Monitor nginx
+# Check nginx logs
 sudo tail -f /var/log/nginx/access.log
 
-# Check disk I/O
-iostat -x 1
-
-# Verify data files are not corrupted
+# Verify data files are accessible and not corrupted
 cd /var/www/kiteapp
 source venv/bin/activate
-python -c "import pickle; pickle.load(open('data/processed/spots.pkl', 'rb'))"
+python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'rb')); print(f'Loaded {len(data)} spots')"
 ```
 
 ---
 
 ## Maintenance
 
-### Regular Updates
+### Updating the Application
 
 ```bash
 # Pull latest code
 cd /var/www/kiteapp
+sudo su - kiteapp
 git pull origin main
 
 # Update backend dependencies
@@ -694,55 +676,16 @@ npm install
 npm run build
 
 # Restart backend service
+exit  # Exit kiteapp user
 sudo systemctl restart kiteapp
 
-# Reload nginx (if config changed)
+# Reload nginx if configuration changed
 sudo systemctl reload nginx
 ```
 
-### Backup Strategy
-
-```bash
-# Create backup script
-sudo nano /usr/local/bin/kiteapp-backup.sh
-```
-
-```bash
-#!/bin/bash
-# Kiteapp backup script
-
-BACKUP_DIR="/backups/kiteapp"
-DATE=$(date +%Y%m%d_%H%M%S)
-APP_DIR="/var/www/kiteapp"
-
-# Create backup directory
-mkdir -p "$BACKUP_DIR"
-
-# Backup data files
-tar -czf "$BACKUP_DIR/data_$DATE.tar.gz" "$APP_DIR/data"
-
-# Backup configuration
-cp "$APP_DIR/.env" "$BACKUP_DIR/env_$DATE"
-cp /etc/nginx/sites-available/kiteapp "$BACKUP_DIR/nginx_$DATE"
-cp /etc/systemd/system/kiteapp.service "$BACKUP_DIR/service_$DATE"
-
-# Keep only last 30 days
-find "$BACKUP_DIR" -name "*.tar.gz" -mtime +30 -delete
-
-echo "Backup completed: $DATE"
-```
-
-Make executable and schedule:
-
-```bash
-sudo chmod +x /usr/local/bin/kiteapp-backup.sh
-
-# Add to crontab (daily at 3 AM)
-sudo crontab -e
-# Add: 0 3 * * * /usr/local/bin/kiteapp-backup.sh >> /var/log/kiteapp/backup.log 2>&1
-```
-
 ### Log Rotation
+
+Configure automatic log rotation to prevent disk space issues:
 
 ```bash
 # Create logrotate configuration
@@ -765,37 +708,7 @@ sudo nano /etc/logrotate.d/kiteapp
 }
 ```
 
-### Monitoring
-
-**Basic health check script:**
-
-```bash
-# Create monitoring script
-nano /usr/local/bin/kiteapp-healthcheck.sh
-```
-
-```bash
-#!/bin/bash
-# Basic health check for Kiteapp
-
-# Check if backend is responding
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://127.0.0.1:8000/health)
-
-if [ "$HEALTH" != "200" ]; then
-    echo "Backend health check failed: $HEALTH"
-    # Restart service
-    systemctl restart kiteapp
-    # Send notification (configure email/slack as needed)
-fi
-
-# Check nginx
-if ! systemctl is-active --quiet nginx; then
-    echo "Nginx is not running"
-    systemctl restart nginx
-fi
-```
-
-### Security Updates
+### System Updates
 
 ```bash
 # Regular system updates
@@ -808,10 +721,9 @@ source venv/bin/activate
 pip list --outdated
 pip install -r requirements.txt --upgrade
 
-# Update Node packages
+# Update Node packages (check for breaking changes first)
 cd frontend
 npm audit
-npm audit fix
 npm update
 ```
 
@@ -832,18 +744,18 @@ npm update
 | `/var/log/kiteapp/` | Application logs |
 | `/var/log/nginx/` | Nginx logs |
 
-### Important Commands
+### Essential Commands
 
 ```bash
 # Backend service
 sudo systemctl [start|stop|restart|status] kiteapp
+sudo journalctl -u kiteapp -f
 
 # Nginx
 sudo systemctl [start|stop|restart|reload|status] nginx
 sudo nginx -t  # Test configuration
 
 # View logs
-sudo journalctl -u kiteapp -f
 sudo tail -f /var/log/kiteapp/error.log
 sudo tail -f /var/log/nginx/error.log
 
@@ -854,52 +766,32 @@ cd /var/www/kiteapp/frontend && npm run build
 cd /var/www/kiteapp && source venv/bin/activate
 ```
 
-### Verification Checklist
+### Post-Deployment Verification
 
-After deployment, verify:
+After deployment, verify everything works:
 
 - [ ] Backend service is running: `sudo systemctl status kiteapp`
-- [ ] Backend responds to health check: `curl http://127.0.0.1:8000/health`
+- [ ] Backend responds: `curl http://127.0.0.1:8000/docs` (should show FastAPI docs)
 - [ ] Nginx is running: `sudo systemctl status nginx`
 - [ ] Nginx configuration is valid: `sudo nginx -t`
-- [ ] Frontend loads in browser
-- [ ] API calls work from frontend
-- [ ] SSL certificate is valid (if configured)
-- [ ] Firewall allows HTTP/HTTPS
-- [ ] Logs are being written: `ls -la /var/log/kiteapp/`
-- [ ] Data files are accessible: `ls -la /var/www/kiteapp/data/processed/`
+- [ ] Domain resolves to server: `ping yourdomain.com`
+- [ ] Frontend loads in browser: `https://yourdomain.com`
+- [ ] API calls work from frontend (check browser console)
+- [ ] SSL certificate is valid (green padlock in browser)
+- [ ] Data files exist: `ls -la /var/www/kiteapp/data/processed/`
 
 ---
 
-## Production Deployment Checklist
+## Production Checklist
 
 Before going live:
 
+- [ ] Update domain name in all configuration files
 - [ ] Update CORS origins in `backend/config.py` or `.env`
-- [ ] Configure proper domain name
 - [ ] Obtain and configure SSL certificate
+- [ ] Test all functionality (map, filters, spot details)
+- [ ] Configure firewall rules
 - [ ] Set up log rotation
-- [ ] Configure backups
-- [ ] Set up monitoring/alerting
 - [ ] Document any server-specific configurations
-- [ ] Test all API endpoints
-- [ ] Test frontend functionality
-- [ ] Load test backend (optional but recommended)
-- [ ] Set up firewall rules
-- [ ] Disable debug mode in all components
-- [ ] Review security headers in nginx
-- [ ] Document emergency procedures
-
----
-
-## Support
-
-For issues specific to this deployment guide, check:
-- Application logs: `/var/log/kiteapp/`
-- System logs: `sudo journalctl -u kiteapp`
-- Nginx logs: `/var/log/nginx/`
-
-For application issues, refer to:
-- `README.md` - Project overview
-- `CLAUDE.md` - Development guide
-- `TESTING_PLAN.md` - Testing procedures
+- [ ] Test from different devices/browsers
+- [ ] Verify data files are complete and up-to-date
