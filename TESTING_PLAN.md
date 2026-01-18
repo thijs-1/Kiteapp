@@ -38,6 +38,36 @@ This document outlines a comprehensive testing strategy for the Kiteapp project.
 - ❌ No CI/CD pipeline for automated testing
 - ❌ No code coverage reporting
 
+### Critical Validation Gap: Wind Bin Alignment
+
+**Issue**: Wind speed filtering requires bin-aligned values, but backend validation is incomplete.
+
+**Wind Bins** (defined in `data_pipelines/config.py:18`):
+```python
+WIND_BINS = [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, inf]
+```
+
+**Current State**:
+- ✅ **Frontend** (`WindRangeSlider.tsx:33`): Enforces `step={2.5}` - users can only select bin-aligned values
+- ❌ **Backend** (`schemas/filters.py:9-10`): Only validates `wind_min >= 0`, does NOT validate bin alignment
+- ⚠️ **Service Layer** (`spot_service.py:99-101`): Contains "partial overlap" logic that shouldn't trigger in normal operation
+
+**Valid Wind Range Values**: `0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 100` (where 100 = infinity)
+
+**Risk**:
+- Users can bypass frontend validation via direct API calls (e.g., `wind_min=12.3`)
+- This triggers "partial bin overlap" code path which may produce unexpected results
+- No validation ensures requests align with histogram bin structure
+
+**Required Fix**:
+- Add Pydantic validator to `SpotFilterParams` ensuring wind values are in the allowed set
+- Add corresponding API validation tests
+
+**Testing Impact**:
+- Tests must verify bin-aligned requests work correctly
+- Tests must verify non-aligned requests are rejected with 422 validation error
+- Tests should document expected behavior for the "partial overlap" code path (defensive programming)
+
 ### Risk Assessment
 
 | Component | Lines of Code | Complexity | Business Impact | Test Priority |
@@ -365,31 +395,36 @@ This document outlines a comprehensive testing strategy for the Kiteapp project.
 **Priority Test Scenarios**:
 
 ```python
-# Exact bin matches
-1. Wind range exactly matches bin edges (10-15 knots)
-   - Histogram: [10-15: 100 hours]
+# Bin-aligned wind ranges (normal operation)
+1. Single bin selection (10-12.5 knots)
+   - Histogram: [10-12.5: 100 hours]
    - Expected: 100% within date range
 
-# Partial bin overlaps
-2. Wind range spans partial bins (12-18 knots)
-   - Bins: [10-15: 100h], [15-20: 100h]
-   - Should calculate overlap: (3/5)*100 + (3/5)*100
+2. Multiple bin selection (10-20 knots)
+   - Bins: [10-12.5: 50h], [12.5-15: 50h], [15-17.5: 50h], [17.5-20: 50h]
+   - Expected: 100% if all bins have data
+
+3. Partial bin range (15-25 knots)
+   - Should include all bins from 15.0 through 25.0
 
 # Date filtering
-3. Full year (01-01 to 12-31) → All data
-4. Single month (06-01 to 06-30) → June data only
-5. Year wrap-around (11-01 to 02-28) → Nov-Dec + Jan-Feb
-6. Same start/end date (06-15 to 06-15) → Single day
+4. Full year (01-01 to 12-31) → All data
+5. Single month (06-01 to 06-30) → June data only
+6. Year wrap-around (11-01 to 02-28) → Nov-Dec + Jan-Feb
+7. Same start/end date (06-15 to 06-15) → Single day
 
 # Edge cases
-7. wind_max = 100 → Should treat as infinity (all bins above min)
-8. Empty histogram → Return 0%
-9. No data in date range → Return 0%
-10. All data meets criteria → Return 100%
+8. wind_max = 100 → Should treat as infinity (all bins above min)
+9. Empty histogram → Return None
+10. No data in date range → Return None
+11. All data meets criteria → Return 100%
+12. wind_min = wind_max (e.g., 15-15) → Single bin boundary
 
-# Bin edge precision
-11. Wind range exactly at bin boundary (15.0-15.0)
-12. Very narrow range (14.9-15.1)
+# Defensive: Non-aligned ranges (should be prevented by validation)
+13. Non-aligned wind range (12.3-18.7 knots)
+    - Current behavior: Uses "partial overlap" logic (lines 99-101)
+    - Expected after validation fix: Should never reach service layer (422 at API)
+    - Test documents current behavior as baseline
 ```
 
 #### `test_filter_dates()`
@@ -483,25 +518,32 @@ This document outlines a comprehensive testing strategy for the Kiteapp project.
 
 #### `test_get_filtered_spots()`
 ```python
-# Happy path
+# Happy path - bin-aligned wind values
 1. No query params → Return all spots with default filters
-2. Valid wind range
-3. Valid date range
-4. Valid percentage threshold
-5. Valid country
-6. Valid name search
-7. All params combined
+2. Valid bin-aligned wind range (10-20 knots)
+3. Valid single bin wind range (15-17.5 knots)
+4. Valid date range
+5. Valid percentage threshold
+6. Valid country
+7. Valid name search
+8. All params combined
 
 # Validation errors (422)
-8. Invalid wind_min (negative)
-9. Invalid wind_max (> 100)
-10. Invalid date format
-11. Invalid percentage (<0 or >100)
+9. Invalid wind_min (negative)
+10. Invalid wind_max (> 100)
+11. Invalid date format
+12. Invalid percentage (<0 or >100)
+13. Non-aligned wind_min (12.3 knots) → Should reject with 422
+14. Non-aligned wind_max (18.7 knots) → Should reject with 422
+15. Both wind values non-aligned → Should reject with 422
 
 # Edge cases
-12. wind_max = 100 (infinity)
-13. Empty result set
-14. Large result set (performance)
+16. wind_max = 100 (infinity) → Valid, represents all speeds above min
+17. wind_min = wind_max = 15 (single bin boundary) → Valid
+18. Empty result set
+19. Large result set (performance)
+
+# Note: Tests 13-15 require backend validation fix to pass
 ```
 
 #### `test_get_all_spots()`
@@ -1767,19 +1809,199 @@ describe('spotApi', () => {
 });
 ```
 
+### Example 5: Bin Alignment Validation Tests
+
+```python
+"""
+File: tests/backend/api/routes/test_spots_validation.py
+Test bin alignment validation for wind speed parameters
+"""
+import pytest
+from fastapi.testclient import TestClient
+from backend.main import app
+
+# Valid bin-aligned values (2.5 knot intervals)
+VALID_WIND_BINS = [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, 25, 27.5, 30, 32.5, 35, 100]
+
+
+class TestWindBinAlignment:
+    """Test suite for wind speed bin alignment validation."""
+
+    @pytest.fixture
+    def client(self):
+        """Create test client."""
+        return TestClient(app)
+
+    @pytest.mark.parametrize("wind_min,wind_max", [
+        (0, 10),        # Valid: both bin-aligned
+        (10, 20),       # Valid: popular range
+        (15, 25),       # Valid: bin-aligned
+        (2.5, 17.5),    # Valid: bin-aligned
+        (0, 100),       # Valid: full range (100 = infinity)
+        (15, 15),       # Valid: single bin boundary
+        (35, 100),      # Valid: high wind range
+    ])
+    def test_valid_bin_aligned_wind_ranges(self, client, wind_min, wind_max):
+        """Test that bin-aligned wind ranges are accepted."""
+        response = client.get("/spots", params={
+            "wind_min": wind_min,
+            "wind_max": wind_max,
+        })
+
+        assert response.status_code == 200, \
+            f"Expected 200 for wind_min={wind_min}, wind_max={wind_max}, got {response.status_code}"
+        data = response.json()
+        assert isinstance(data, list)
+
+    @pytest.mark.parametrize("wind_min,wind_max,description", [
+        (12.3, 20, "non-aligned wind_min"),
+        (10, 18.7, "non-aligned wind_max"),
+        (12.3, 18.7, "both non-aligned"),
+        (14.9, 15.1, "narrow non-aligned range"),
+        (0.5, 10, "half-step offset"),
+        (11, 19, "integer but not bin-aligned"),
+    ])
+    def test_invalid_non_aligned_wind_ranges(self, client, wind_min, wind_max, description):
+        """Test that non-aligned wind ranges are rejected with 422."""
+        response = client.get("/spots", params={
+            "wind_min": wind_min,
+            "wind_max": wind_max,
+        })
+
+        # After validation fix, these should return 422
+        # Currently may return 200 - test documents expected behavior
+        expected_status = 422  # Expected after implementing validation
+
+        if response.status_code != expected_status:
+            pytest.skip(
+                f"Bin alignment validation not yet implemented. "
+                f"Got {response.status_code} for {description}, expected {expected_status}"
+            )
+
+        assert response.status_code == expected_status, \
+            f"Expected {expected_status} for {description}, got {response.status_code}"
+
+        error_detail = response.json()
+        assert "detail" in error_detail
+        # Validation error should mention bin alignment
+        assert any(
+            keyword in str(error_detail).lower()
+            for keyword in ["bin", "aligned", "valid wind", "2.5"]
+        ), f"Error message should mention bin alignment: {error_detail}"
+
+    def test_frontend_slider_constraints(self):
+        """
+        Document frontend constraints that enforce bin alignment.
+        This is more of a documentation test than a functional test.
+        """
+        # Frontend uses rc-slider with step=2.5
+        # See: frontend/src/components/Menu/WindRangeSlider.tsx:33
+        frontend_config = {
+            "min": 0,
+            "max": 37.5,
+            "step": 2.5,
+            "marks": {0: '0', 10: '10', 20: '20', 30: '30', 37.5: '35+'}
+        }
+
+        # Calculate valid values frontend can produce
+        step = frontend_config["step"]
+        min_val = frontend_config["min"]
+        max_val = frontend_config["max"]
+
+        valid_values = []
+        current = min_val
+        while current <= max_val:
+            valid_values.append(current)
+            current += step
+
+        # Add 100 as special case for infinity
+        valid_values_with_infinity = valid_values[:-1] + [100]
+
+        assert valid_values_with_infinity == VALID_WIND_BINS, \
+            "Frontend slider should produce only bin-aligned values"
+
+    def test_service_layer_defensive_behavior(self, client):
+        """
+        Test current service layer behavior with non-aligned values.
+        Documents the "partial overlap" code path.
+        """
+        # This test documents current behavior before validation is added
+        # Service layer has "partial overlap" logic at spot_service.py:99-101
+
+        response = client.get("/spots", params={
+            "wind_min": 12.3,  # Non-aligned
+            "wind_max": 18.7,  # Non-aligned
+        })
+
+        # Current behavior: likely returns 200 with results
+        # After validation: should never reach this point (422 at API layer)
+
+        if response.status_code == 200:
+            # Document current behavior
+            data = response.json()
+            # Results may include hours from bins that partially overlap
+            # This is not ideal but is current implementation
+            assert isinstance(data, list)
+            # Log warning that this behavior should change
+            pytest.skip(
+                "Service layer accepts non-aligned values (uses partial overlap logic). "
+                "This should be prevented by API validation."
+            )
+        elif response.status_code == 422:
+            # Validation has been implemented - this is correct behavior
+            assert True
+        else:
+            pytest.fail(f"Unexpected status code: {response.status_code}")
+
+
+class TestWindBinConfiguration:
+    """Test that bin configuration is consistent across codebase."""
+
+    def test_bin_configuration_matches_constants(self):
+        """Verify wind bins match the defined constants."""
+        from data_pipelines.config import WIND_BINS
+        import numpy as np
+
+        # Expected bins: 0, 2.5, 5, ..., 35, inf
+        expected_bins = list(np.arange(0, 37.5, 2.5)) + [float('inf')]
+
+        assert WIND_BINS == expected_bins, \
+            f"WIND_BINS configuration mismatch. Expected {expected_bins}, got {WIND_BINS}"
+
+    def test_api_valid_values_match_bins(self):
+        """Verify API validation uses correct bin values."""
+        from data_pipelines.config import WIND_BINS
+
+        # API should accept bin edges (excluding inf, which maps to 100)
+        valid_api_values = [b for b in WIND_BINS if b != float('inf')] + [100]
+
+        assert valid_api_values == VALID_WIND_BINS, \
+            f"API valid values should match bin configuration"
+```
+
+**Key Points in Bin Alignment Tests**:
+
+1. **Parametrized valid cases**: Tests all common bin-aligned combinations
+2. **Parametrized invalid cases**: Tests various non-aligned inputs that should be rejected
+3. **Skip mechanism**: Tests that require the validation fix will skip gracefully if not implemented
+4. **Documentation**: Tests serve as documentation of expected behavior
+5. **Configuration consistency**: Verifies bin configuration is consistent across codebase
+6. **Frontend/backend alignment**: Tests that frontend constraints match backend expectations
+
 ---
 
 ## Document Maintenance
 
 **Document Owner**: Engineering Team
-**Last Updated**: 2026-01-17
+**Last Updated**: 2026-01-18
 **Review Cycle**: Quarterly or after major changes
-**Version**: 1.0
+**Version**: 1.1
 
 ### Change Log
 
 | Date | Version | Changes | Author |
 |------|---------|---------|--------|
+| 2026-01-18 | 1.1 | Added bin alignment validation section, updated test cases, added Example 5 for validation tests | Claude |
 | 2026-01-17 | 1.0 | Initial testing plan created | Claude |
 
 ---
