@@ -7,17 +7,21 @@ This pipeline:
 3. For each cell with spots:
    a. Downloads 10 years of ERA5 wind data from CDS
    b. Processes wind data for each spot in the cell
-   c. Builds and saves daily 1D and 2D histograms
+   c. Builds daily 1D and 2D histograms
    d. Optionally deletes raw data to save disk space
+4. Saves all 1D histograms as a single 3D array (num_spots x 366 x num_bins)
 """
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Dict
+import numpy as np
 from tqdm import tqdm
 
 from data_pipelines.config import (
-    HISTOGRAMS_1D_DIR,
+    HISTOGRAMS_1D_FILE,
     HISTOGRAMS_2D_DIR,
     RAW_DATA_DIR,
+    WIND_BINS,
+    DAYS_OF_YEAR,
 )
 from data_pipelines.services.grid_service import GridService
 from data_pipelines.services.cds_service import CDSService
@@ -53,22 +57,72 @@ class PipelineOrchestrator:
         self.cleanup_after_processing = cleanup_after_processing
 
         # Ensure output directories exist
-        HISTOGRAMS_1D_DIR.mkdir(parents=True, exist_ok=True)
         HISTOGRAMS_2D_DIR.mkdir(parents=True, exist_ok=True)
+        HISTOGRAMS_1D_FILE.parent.mkdir(parents=True, exist_ok=True)
 
-    def histogram_exists(self, spot_id: str) -> bool:
-        """Check if histogram files already exist for a spot."""
-        h1d_path = HISTOGRAMS_1D_DIR / f"{spot_id}.pkl"
+        # Accumulators for 1D histogram data
+        self._histogram_1d_data: Dict[str, np.ndarray] = {}  # spot_id -> (366, num_bins)
+
+        # Create day-to-index mapping
+        self._day_to_idx = {day: idx for idx, day in enumerate(DAYS_OF_YEAR)}
+        self._num_bins = len(WIND_BINS) - 1
+
+    def histogram_2d_exists(self, spot_id: str) -> bool:
+        """Check if 2D histogram file already exists for a spot."""
         h2d_path = HISTOGRAMS_2D_DIR / f"{spot_id}.pkl"
-        return h1d_path.exists() and h2d_path.exists()
+        return h2d_path.exists()
 
-    def save_histograms(self, spot_id: str, hist_1d, hist_2d) -> None:
-        """Save histogram data to pickle files."""
-        h1d_path = HISTOGRAMS_1D_DIR / f"{spot_id}.pkl"
+    def spot_in_1d_data(self, spot_id: str) -> bool:
+        """Check if spot already has 1D histogram data loaded."""
+        return spot_id in self._histogram_1d_data
+
+    def save_histogram_2d(self, spot_id: str, hist_2d) -> None:
+        """Save 2D histogram data to pickle file."""
         h2d_path = HISTOGRAMS_2D_DIR / f"{spot_id}.pkl"
-
-        save_pickle(hist_1d.to_dict(), h1d_path)
         save_pickle(hist_2d.to_dict(), h2d_path)
+
+    def add_histogram_1d(self, spot_id: str, hist_1d) -> None:
+        """Add 1D histogram to accumulator."""
+        # Convert daily_counts dict to 2D array (366 x num_bins)
+        arr = np.zeros((len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
+        for day, counts in hist_1d.daily_counts.items():
+            if day in self._day_to_idx:
+                arr[self._day_to_idx[day]] = counts
+        self._histogram_1d_data[spot_id] = arr
+
+    def save_all_1d_histograms(self) -> None:
+        """Save all accumulated 1D histograms as a single 3D array."""
+        if not self._histogram_1d_data:
+            print("No 1D histogram data to save.")
+            return
+
+        spot_ids = list(self._histogram_1d_data.keys())
+        num_spots = len(spot_ids)
+
+        # Build 3D array: (num_spots, 366, num_bins)
+        data = np.zeros((num_spots, len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
+        for i, spot_id in enumerate(spot_ids):
+            data[i] = self._histogram_1d_data[spot_id]
+
+        result = {
+            "spot_ids": spot_ids,
+            "bins": WIND_BINS,
+            "days": DAYS_OF_YEAR,
+            "data": data,
+        }
+
+        save_pickle(result, HISTOGRAMS_1D_FILE)
+        print(f"Saved 1D histograms: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {self._num_bins} bins")
+
+    def load_existing_1d_histograms(self) -> None:
+        """Load existing 1D histogram data if available."""
+        if HISTOGRAMS_1D_FILE.exists() and self.skip_existing_histograms:
+            import pickle
+            with open(HISTOGRAMS_1D_FILE, "rb") as f:
+                existing = pickle.load(f)
+            for i, spot_id in enumerate(existing["spot_ids"]):
+                self._histogram_1d_data[spot_id] = existing["data"][i]
+            print(f"Loaded {len(self._histogram_1d_data)} existing 1D histograms")
 
     def cleanup_cell_data(self, cell_index: int) -> int:
         """
@@ -79,13 +133,6 @@ class PipelineOrchestrator:
         """
         cell_id = f"cell_{cell_index:04d}"
         bytes_freed = 0
-
-        # Delete combined file
-        combined_path = RAW_DATA_DIR / f"era5_wind_{cell_id}.nc"
-        if combined_path.exists():
-            bytes_freed += combined_path.stat().st_size
-            combined_path.unlink()
-            print(f"  Deleted: {combined_path.name}")
 
         # Delete yearly files
         for yearly_file in RAW_DATA_DIR.glob(f"era5_wind_{cell_id}_*.nc"):
@@ -98,7 +145,7 @@ class PipelineOrchestrator:
     def all_spots_processed(self, cell) -> bool:
         """Check if all spots in a cell already have histograms."""
         for spot in cell.spots:
-            if not self.histogram_exists(spot.spot_id):
+            if not self.spot_in_1d_data(spot.spot_id) or not self.histogram_2d_exists(spot.spot_id):
                 return False
         return True
 
@@ -127,34 +174,42 @@ class PipelineOrchestrator:
         # Get expanded bounding box for download
         download_bbox = self.grid_service.get_download_bbox(cell)
 
-        # Download ERA5 data for this cell
-        nc_path = self.cds_service.download_for_cell(
+        # Download ERA5 data for this cell (returns list of yearly files)
+        nc_paths = self.cds_service.download_for_cell(
             download_bbox,
             cell_index,
             skip_existing=self.skip_existing_downloads,
         )
 
-        if nc_path is None:
-            # File already existed
-            stats["download_skipped"] = True
-            cell_id = f"cell_{cell_index:04d}"
-            nc_path = RAW_DATA_DIR / f"era5_wind_{cell_id}.nc"
+        # If download was skipped (all files exist), get existing files
+        if not nc_paths:
+            nc_paths = self.cds_service.get_existing_files_for_cell(cell_index)
+            if nc_paths:
+                stats["download_skipped"] = True
 
-        if not nc_path.exists():
-            print(f"Warning: NetCDF file not found for cell {cell_index}")
+        if not nc_paths:
+            print(f"Warning: No NetCDF files found for cell {cell_index}")
             return stats
 
         # Process each spot in the cell
-        for spot in cell.spots:
-            # Skip if histograms already exist
-            if self.skip_existing_histograms and self.histogram_exists(spot.spot_id):
+        total_spots = len(cell.spots)
+        for i, spot in enumerate(cell.spots, 1):
+            # Check what needs processing
+            has_1d = self.spot_in_1d_data(spot.spot_id)
+            has_2d = self.histogram_2d_exists(spot.spot_id)
+
+            if self.skip_existing_histograms and has_1d and has_2d:
                 stats["spots_skipped"] += 1
+                print(f"  Spot {i}/{total_spots}: {spot.name} (skipped - already exists)")
                 continue
 
-            # Extract wind data for this spot
-            wind_data = self.wind_processor.process_netcdf_for_spot(nc_path, spot)
+            print(f"  Spot {i}/{total_spots}: {spot.name}...", end=" ", flush=True)
+
+            # Extract wind data for this spot (using multi-file dataset)
+            wind_data = self.wind_processor.process_netcdf_for_spot(nc_paths, spot)
 
             if wind_data is None:
+                print("failed")
                 continue
 
             # Build histograms
@@ -165,9 +220,16 @@ class PipelineOrchestrator:
                 wind_data["direction"],
             )
 
-            # Save histograms
-            self.save_histograms(spot.spot_id, hist_1d, hist_2d)
+            # Add 1D to accumulator
+            if not has_1d:
+                self.add_histogram_1d(spot.spot_id, hist_1d)
+
+            # Save 2D histogram
+            if not has_2d:
+                self.save_histogram_2d(spot.spot_id, hist_2d)
+
             stats["spots_processed"] += 1
+            print("done")
 
         # Cleanup raw data if requested
         if self.cleanup_after_processing:
@@ -187,6 +249,9 @@ class PipelineOrchestrator:
         """
         print("Loading spots and building grid...")
         cells_with_spots = self.grid_service.get_cells_with_spots()
+
+        # Load existing 1D histogram data
+        self.load_existing_1d_histograms()
 
         if max_cells:
             cells_with_spots = cells_with_spots[:max_cells]
@@ -216,6 +281,10 @@ class PipelineOrchestrator:
                 total_stats["cells_skipped"] += 1
             if cell_stats["download_skipped"]:
                 total_stats["downloads_skipped"] += 1
+
+        # Save combined 1D histograms
+        print("\nSaving combined 1D histogram data...")
+        self.save_all_1d_histograms()
 
         print("\nPipeline complete!")
         print(f"  Cells processed: {total_stats['cells_processed']}")

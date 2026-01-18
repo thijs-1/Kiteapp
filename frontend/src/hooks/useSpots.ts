@@ -20,6 +20,7 @@ export function useFilteredSpots() {
         min_percentage: filters.minPercentage,
       });
       setSpots(data);
+      setLoading(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch spots');
     }

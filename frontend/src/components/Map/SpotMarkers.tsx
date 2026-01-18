@@ -1,4 +1,4 @@
-import { CircleMarker, Popup } from 'react-leaflet';
+import { CircleMarker, Tooltip } from 'react-leaflet';
 import { useFilteredSpots } from '../../hooks/useSpots';
 import { useSpotStore } from '../../store/spotStore';
 import type { SpotWithStats } from '../../api/types';
@@ -40,7 +40,7 @@ function SpotMarker({ spot, onSelect }: SpotMarkerProps) {
         click: () => onSelect(spot),
       }}
     >
-      <Popup>
+      <Tooltip>
         <div className="text-sm">
           <div className="font-bold">{spot.name}</div>
           <div className="text-gray-600">{spot.country}</div>
@@ -48,7 +48,7 @@ function SpotMarker({ spot, onSelect }: SpotMarkerProps) {
             {spot.kiteable_percentage.toFixed(0)}% kiteable
           </div>
         </div>
-      </Popup>
+      </Tooltip>
     </CircleMarker>
   );
 }

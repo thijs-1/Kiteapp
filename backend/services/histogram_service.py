@@ -1,9 +1,15 @@
 """Service for histogram operations."""
 from typing import Dict, List, Optional
+import math
 import numpy as np
 
 from backend.data.histogram_repository import HistogramRepository
 from backend.config import settings
+
+
+def _sanitize_for_json(bins: List[float]) -> List[float]:
+    """Replace infinity values with 100 for JSON serialization."""
+    return [100.0 if math.isinf(b) else b for b in bins]
 
 
 class HistogramService:
@@ -53,7 +59,7 @@ class HistogramService:
 
         return {
             "spot_id": spot_id,
-            "bins": hist_data["bins"],
+            "bins": _sanitize_for_json(hist_data["bins"]),
             "daily_data": filtered_counts,
         }
 
@@ -104,7 +110,7 @@ class HistogramService:
 
         return {
             "spot_id": spot_id,
-            "bins": hist_data["bins"],
+            "bins": _sanitize_for_json(hist_data["bins"]),
             "daily_data": smoothed_counts,
         }
 

@@ -2,8 +2,8 @@
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import cdsapi
-import xarray as xr
 
 from data_pipelines.config import (
     RAW_DATA_DIR,
@@ -29,11 +29,6 @@ class CDSService:
         end_year = current_year - 1
         start_year = end_year - ERA5_YEARS + 1
         return list(range(start_year, end_year + 1))
-
-    def get_output_path(self, cell_id: str) -> Path:
-        """Generate output path for combined data."""
-        filename = f"era5_wind_{cell_id}.nc"
-        return self.output_dir / filename
 
     def get_yearly_path(self, cell_id: str, year: int) -> Path:
         """Generate output path for yearly data."""
@@ -90,60 +85,103 @@ class CDSService:
 
         return output_path
 
+    def _download_year_worker(
+        self,
+        bbox: BoundingBox,
+        cell_id: str,
+        year: int,
+    ) -> Optional[Path]:
+        """Download a single year (for parallel execution)."""
+        # Each thread needs its own client instance
+        client = cdsapi.Client()
+        output_path = self.get_yearly_path(cell_id, year)
+
+        request = {
+            "product_type": "reanalysis",
+            "variable": [
+                "10m_u_component_of_wind",
+                "10m_v_component_of_wind",
+            ],
+            "year": str(year),
+            "month": [f"{m:02d}" for m in range(1, 13)],
+            "day": [f"{d:02d}" for d in range(1, 32)],
+            "time": [f"{h:02d}:00" for h in range(24)],
+            "area": bbox.to_cds_area(),
+            "data_format": "netcdf",
+        }
+
+        try:
+            client.retrieve(ERA5_DATASET, request, str(output_path))
+            return output_path
+        except Exception as e:
+            print(f"    Error downloading {year}: {e}")
+            return None
+
     def download_era5_wind(
         self,
         bbox: BoundingBox,
         cell_id: str,
         skip_existing: bool = True,
-    ) -> Optional[Path]:
+        max_parallel: int = 5,
+    ) -> List[Path]:
         """
-        Download ERA5 wind data for a bounding box (year by year).
+        Download ERA5 wind data for a bounding box (one file per year).
 
         Args:
             bbox: Bounding box to download data for
             cell_id: Unique identifier for the grid cell
-            skip_existing: Skip download if combined file already exists
+            skip_existing: Skip download if file already exists
+            max_parallel: Maximum number of parallel downloads
 
         Returns:
-            Path to combined file, or None if skipped
+            List of paths to yearly NetCDF files
         """
-        combined_path = self.get_output_path(cell_id)
-
-        if skip_existing and combined_path.exists():
-            return None  # Combined file already exists
-
         years = self.get_year_range()
-        yearly_files = []
 
-        # Download each year separately
+        # Check which years need downloading
+        years_to_download = []
+        existing_files = []
+
         for year in years:
-            yearly_path = self.download_year(bbox, cell_id, year, skip_existing=True)
-            if yearly_path and yearly_path.exists():
-                yearly_files.append(yearly_path)
+            year_path = self.get_yearly_path(cell_id, year)
+            if skip_existing and year_path.exists():
+                existing_files.append(year_path)
+            else:
+                years_to_download.append(year)
 
-        if not yearly_files:
-            print(f"  No yearly files downloaded for {cell_id}")
-            return None
+        if existing_files and not years_to_download:
+            print(f"  All {len(existing_files)} years already exist, skipping download")
+            return sorted(existing_files)
 
-        # Combine yearly files into one
-        print(f"  Combining {len(yearly_files)} yearly files...")
-        datasets = [xr.open_dataset(f) for f in yearly_files]
-        combined = xr.concat(datasets, dim="time")
-        combined.to_netcdf(combined_path)
+        if years_to_download:
+            print(f"  Downloading {len(years_to_download)} years ({years_to_download[0]}-{years_to_download[-1]})...")
+            completed = 0
 
-        # Close datasets
-        for ds in datasets:
-            ds.close()
+            with ThreadPoolExecutor(max_workers=max_parallel) as executor:
+                futures = {
+                    executor.submit(self._download_year_worker, bbox, cell_id, year): year
+                    for year in years_to_download
+                }
 
-        print(f"  Combined file saved: {combined_path}")
-        return combined_path
+                for future in as_completed(futures):
+                    year = futures[future]
+                    result = future.result()
+                    completed += 1
+
+                    if result:
+                        existing_files.append(result)
+                        print(f"    [{completed}/{len(years_to_download)}] {year}: Done")
+                    else:
+                        print(f"    [{completed}/{len(years_to_download)}] {year}: Failed")
+
+        return sorted(existing_files)
 
     def download_for_cell(
         self,
         bbox: BoundingBox,
         cell_index: int,
         skip_existing: bool = True,
-    ) -> Optional[Path]:
+    ) -> List[Path]:
         """
         Download ERA5 data for a grid cell.
 
@@ -153,7 +191,18 @@ class CDSService:
             skip_existing: Skip if file already exists
 
         Returns:
-            Path to downloaded file, or None if skipped
+            List of paths to yearly NetCDF files
         """
         cell_id = f"cell_{cell_index:04d}"
         return self.download_era5_wind(bbox, cell_id, skip_existing)
+
+    def get_existing_files_for_cell(self, cell_index: int) -> List[Path]:
+        """Get list of existing yearly files for a cell."""
+        cell_id = f"cell_{cell_index:04d}"
+        years = self.get_year_range()
+        existing = []
+        for year in years:
+            path = self.get_yearly_path(cell_id, year)
+            if path.exists():
+                existing.append(path)
+        return sorted(existing)

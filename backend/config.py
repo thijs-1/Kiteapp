@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     data_dir: Path = project_root / "data"
     processed_dir: Path = data_dir / "processed"
     spots_file: Path = processed_dir / "spots.pkl"
-    histograms_1d_dir: Path = processed_dir / "histograms_1d"
+    histograms_1d_file: Path = processed_dir / "histograms_1d.pkl"  # Single 3D array
     histograms_2d_dir: Path = processed_dir / "histograms_2d"
 
     # API settings

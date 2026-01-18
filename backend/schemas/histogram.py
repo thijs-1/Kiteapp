@@ -8,7 +8,7 @@ class HistogramResponse(BaseModel):
 
     spot_id: str
     bins: List[float]
-    daily_data: Dict[str, List[int]]  # {"01-01": [counts...], ...}
+    daily_data: Dict[str, List[float]]  # {"01-01": [counts...], ...}
 
 
 class WindRoseResponse(BaseModel):

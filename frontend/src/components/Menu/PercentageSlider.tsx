@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import Slider from 'rc-slider';
 import 'rc-slider/assets/index.css';
 import { useFilterStore } from '../../store/filterStore';
@@ -12,12 +13,12 @@ const PERCENTAGE_MARKS: Record<number, string> = {
 
 export function PercentageSlider() {
   const { minPercentage, setMinPercentage } = useFilterStore();
+  const [localValue, setLocalValue] = useState(minPercentage);
 
-  const handleChange = (value: number | number[]) => {
-    if (typeof value === 'number') {
-      setMinPercentage(value);
-    }
-  };
+  // Sync local state when store changes (e.g., reset filters)
+  useEffect(() => {
+    setLocalValue(minPercentage);
+  }, [minPercentage]);
 
   return (
     <div className="space-y-2">
@@ -29,8 +30,13 @@ export function PercentageSlider() {
           min={0}
           max={100}
           step={5}
-          value={minPercentage}
-          onChange={handleChange}
+          value={localValue}
+          onChange={(value) => setLocalValue(value as number)}
+          onAfterChange={(value) => {
+            if (typeof value === 'number') {
+              setMinPercentage(value);
+            }
+          }}
           marks={PERCENTAGE_MARKS}
           trackStyle={{ backgroundColor: '#FF69B4' }}
           handleStyle={{ borderColor: '#FF69B4', backgroundColor: 'white' }}
@@ -38,7 +44,7 @@ export function PercentageSlider() {
         />
       </div>
       <div className="text-xs text-gray-500 text-center">
-        At least {minPercentage}% of time with good wind
+        At least {localValue}% of time with good wind
       </div>
     </div>
   );

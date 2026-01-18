@@ -28,7 +28,7 @@ export function DateRangePicker() {
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-700">
-        Date Range (year-agnostic)
+        Date Range:
       </label>
 
       <div className="grid grid-cols-2 gap-4">

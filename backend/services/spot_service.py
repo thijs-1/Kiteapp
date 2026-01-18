@@ -1,5 +1,6 @@
 """Service for spot filtering and statistics."""
-from typing import List, Optional
+from typing import List, Optional, Dict
+import numpy as np
 import pandas as pd
 
 from backend.data.spot_repository import SpotRepository
@@ -67,58 +68,70 @@ class SpotService:
         Returns:
             Percentage of time wind is in range, or None if no data
         """
-        hist_data = self.histogram_repo.get_1d_histogram(spot_id)
-        if not hist_data:
+        # Get data from 3D array
+        data = self.histogram_repo.get_1d_data()
+        if data is None:
             return None
 
-        bins = hist_data["bins"]
-        daily_counts = hist_data["daily_counts"]
-
-        # Filter to date range
-        filtered_dates = self._filter_dates(list(daily_counts.keys()), start_date, end_date)
-        if not filtered_dates:
+        idx = self.histogram_repo.get_spot_index(spot_id)
+        if idx is None:
             return None
 
-        total_in_range = 0
-        total_count = 0
+        # Get masks
+        day_mask = self.histogram_repo.get_1d_day_indices(start_date, end_date)
+        bin_mask = self.histogram_repo.get_1d_bin_mask(wind_min, wind_max)
 
-        for date in filtered_dates:
-            counts = daily_counts.get(date, [])
-            if not counts:
-                continue
+        # Get spot data and apply masks
+        spot_data = data[idx]  # Shape: (366, num_bins)
+        filtered = spot_data[day_mask, :]  # Shape: (num_days_in_range, num_bins)
 
-            for i, count in enumerate(counts):
-                bin_low = bins[i]
-                bin_high = bins[i + 1] if i + 1 < len(bins) else float("inf")
-
-                total_count += count
-
-                # Check if bin overlaps with desired range
-                if bin_low >= wind_min and bin_high <= wind_max:
-                    total_in_range += count
-                elif bin_low < wind_max and bin_high > wind_min:
-                    # Partial overlap - count it
-                    total_in_range += count
-
-        if total_count == 0:
+        total = filtered.sum()
+        if total == 0:
             return None
 
-        return (total_in_range / total_count) * 100
+        in_range = filtered[:, bin_mask].sum()
+        return (in_range / total) * 100
 
-    def _filter_dates(
+    def _calculate_all_percentages_vectorized(
         self,
-        dates: List[str],
+        wind_min: float,
+        wind_max: float,
         start_date: str,
         end_date: str,
-    ) -> List[str]:
-        """Filter dates to those within the specified range."""
-        # Handle year wrap-around (e.g., Nov 1 to Feb 28)
-        if start_date <= end_date:
-            # Normal range within same year
-            return [d for d in dates if start_date <= d <= end_date]
-        else:
-            # Wraps around year end
-            return [d for d in dates if d >= start_date or d <= end_date]
+    ) -> Dict[str, float]:
+        """
+        Calculate kiteable percentage for ALL spots using vectorized operations.
+
+        Returns:
+            Dict mapping spot_id to percentage
+        """
+        data = self.histogram_repo.get_1d_data()
+        if data is None:
+            return {}
+
+        spot_ids = self.histogram_repo.get_1d_spot_ids()
+        if not spot_ids:
+            return {}
+
+        # Get masks
+        day_mask = self.histogram_repo.get_1d_day_indices(start_date, end_date)
+        bin_mask = self.histogram_repo.get_1d_bin_mask(wind_min, wind_max)
+
+        # Apply day mask: data shape (num_spots, 366, num_bins) -> (num_spots, num_days, num_bins)
+        filtered = data[:, day_mask, :]
+
+        # Calculate totals per spot: sum over days and bins
+        totals = filtered.sum(axis=(1, 2))  # Shape: (num_spots,)
+
+        # Calculate in-range counts: sum over days, only selected bins
+        in_range = filtered[:, :, bin_mask].sum(axis=(1, 2))  # Shape: (num_spots,)
+
+        # Calculate percentages (avoid division by zero)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            percentages = np.where(totals > 0, (in_range / totals) * 100, 0)
+
+        # Build result dict
+        return {spot_id: float(percentages[i]) for i, spot_id in enumerate(spot_ids)}
 
     def filter_spots(
         self,
@@ -131,7 +144,7 @@ class SpotService:
         min_percentage: float = 75,
     ) -> List[SpotWithStats]:
         """
-        Filter spots based on criteria.
+        Filter spots based on criteria using vectorized operations.
 
         Args:
             wind_min: Minimum wind speed in knots
@@ -149,7 +162,15 @@ class SpotService:
         if wind_max >= 100:
             wind_max = float("inf")
 
-        # Start with all spots or filtered by country/name
+        # Calculate percentages for ALL spots at once (vectorized)
+        all_percentages = self._calculate_all_percentages_vectorized(
+            wind_min, wind_max, start_date, end_date
+        )
+
+        if not all_percentages:
+            return []
+
+        # Get spot metadata
         if country:
             df = self.spot_repo.filter_by_country(country)
         elif name:
@@ -165,26 +186,21 @@ class SpotService:
 
         for _, row in df.iterrows():
             spot_id = row["spot_id"]
+            percentage = all_percentages.get(spot_id)
 
-            # Calculate kiteable percentage
-            percentage = self.calculate_kiteable_percentage(
-                spot_id, wind_min, wind_max, start_date, end_date
-            )
-
-            if percentage is None:
+            if percentage is None or percentage < min_percentage:
                 continue
 
-            if percentage >= min_percentage:
-                results.append(
-                    SpotWithStats(
-                        spot_id=spot_id,
-                        name=row["name"],
-                        latitude=row["latitude"],
-                        longitude=row["longitude"],
-                        country=row["country"],
-                        kiteable_percentage=round(percentage, 1),
-                    )
+            results.append(
+                SpotWithStats(
+                    spot_id=spot_id,
+                    name=row["name"],
+                    latitude=row["latitude"],
+                    longitude=row["longitude"],
+                    country=row["country"],
+                    kiteable_percentage=round(percentage, 1),
                 )
+            )
 
         # Sort by kiteable percentage descending
         results.sort(key=lambda x: x.kiteable_percentage, reverse=True)

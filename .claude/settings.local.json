@@ -4,7 +4,11 @@
       "Bash(C:/Users/thijs/Kiteapp3/venv/Scripts/python.exe:*)",
       "Bash(C:/Users/thijs/Kiteapp3/venv/Scripts/pip.exe install:*)",
       "Bash(npm install)",
-      "Bash(npx tsc:*)"
+      "Bash(npx tsc:*)",
+      "Bash(tree:*)",
+      "Bash(./venv/Scripts/pip install h5netcdf)",
+      "Bash(npm run build:*)",
+      "Bash(dir /s \"C:\\\\Users\\\\thijs\\\\Kiteapp3\\\\frontend\\\\src\")"
     ]
   }
 }

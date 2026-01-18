@@ -54,6 +54,17 @@ class WindProcessor:
         """Load a NetCDF file."""
         return xr.open_dataset(nc_path)
 
+    def load_netcdf_multi(self, nc_paths: list) -> xr.Dataset:
+        """Load multiple NetCDF files as a single dataset."""
+        return xr.open_mfdataset(
+            nc_paths,
+            combine="nested",
+            concat_dim="valid_time",
+            data_vars="minimal",
+            coords="minimal",
+            compat="override",
+        )
+
     def find_nearest_point(
         self,
         ds: xr.Dataset,
@@ -105,7 +116,8 @@ class WindProcessor:
         # Extract u and v components at this point
         u = ds["u10"].isel(latitude=lat_idx, longitude=lon_idx).values
         v = ds["v10"].isel(latitude=lat_idx, longitude=lon_idx).values
-        time = ds["time"].values
+        # Handle both 'time' and 'valid_time' coordinate names (CDS API uses valid_time)
+        time = ds["valid_time"].values if "valid_time" in ds else ds["time"].values
 
         # Calculate strength and direction
         strength = self.calculate_wind_strength(u, v)
@@ -119,24 +131,27 @@ class WindProcessor:
 
     def process_netcdf_for_spot(
         self,
-        nc_path: Path,
+        nc_paths,
         spot: Spot,
     ) -> Optional[Dict[str, np.ndarray]]:
         """
-        Process a NetCDF file to extract wind data for a spot.
+        Process NetCDF file(s) to extract wind data for a spot.
 
         Args:
-            nc_path: Path to NetCDF file
+            nc_paths: Path to NetCDF file, or list of paths for multi-file dataset
             spot: Spot to process
 
         Returns:
             Wind data dict, or None if processing failed
         """
         try:
-            ds = self.load_netcdf(nc_path)
+            if isinstance(nc_paths, (list, tuple)):
+                ds = self.load_netcdf_multi(nc_paths)
+            else:
+                ds = self.load_netcdf(nc_paths)
             data = self.extract_spot_data(ds, spot)
             ds.close()
             return data
         except Exception as e:
-            print(f"Error processing {nc_path} for spot {spot.name}: {e}")
+            print(f"Error processing {nc_paths} for spot {spot.name}: {e}")
             return None

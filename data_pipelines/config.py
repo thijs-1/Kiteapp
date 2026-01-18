@@ -7,8 +7,12 @@ PROJECT_ROOT = Path(__file__).parent.parent
 DATA_DIR = PROJECT_ROOT / "data"
 RAW_DATA_DIR = DATA_DIR / "raw"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
-HISTOGRAMS_1D_DIR = PROCESSED_DATA_DIR / "histograms_1d"
+HISTOGRAMS_1D_FILE = PROCESSED_DATA_DIR / "histograms_1d.pkl"  # Single 3D array
 HISTOGRAMS_2D_DIR = PROCESSED_DATA_DIR / "histograms_2d"
+
+# Day of year mapping: list of "MM-DD" strings for all 366 days
+DAYS_OF_YEAR = [f"{m:02d}-{d:02d}" for m in range(1, 13) for d in range(1, 32)
+                if not (m == 2 and d > 29) and not (m in [4, 6, 9, 11] and d > 30)]
 
 # Input data
 INPUT_SPOTS_FILE = PROJECT_ROOT / "windguru_spots.pkl"
@@ -20,9 +24,9 @@ WIND_BINS = list(np.arange(0, 37.5, 2.5)) + [float('inf')]
 # Direction bins: [-5, 5, 15, 25, ..., 345, 355] (36 bins of 10 degrees)
 DIRECTION_BINS = list(range(-5, 360, 10))
 
-# Grid configuration
-GRID_SIZE_LAT = 30  # degrees
-GRID_SIZE_LON = 30  # degrees
+# Grid configuration (30x30 cells covering the globe)
+GRID_SIZE_LAT = 6   # degrees (180° / 30 cells)
+GRID_SIZE_LON = 12  # degrees (360° / 30 cells)
 GRID_EXPANSION_KM = 5  # km to expand each grid cell for downloads
 
 # Unit conversion

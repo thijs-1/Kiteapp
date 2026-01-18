@@ -1,8 +1,14 @@
 """Service for wind rose operations."""
 from typing import Dict, List, Optional
+import math
 import numpy as np
 
 from backend.data.histogram_repository import HistogramRepository
+
+
+def _sanitize_for_json(bins: List[float]) -> List[float]:
+    """Replace infinity values with 100 for JSON serialization."""
+    return [100.0 if math.isinf(b) else b for b in bins]
 
 
 class WindRoseService:
@@ -65,7 +71,7 @@ class WindRoseService:
 
         return {
             "spot_id": spot_id,
-            "strength_bins": hist_data["strength_bins"],
+            "strength_bins": _sanitize_for_json(hist_data["strength_bins"]),
             "direction_bins": hist_data["direction_bins"],
             "data": aggregated.tolist(),
         }

@@ -10,6 +10,14 @@ import {
 } from 'chart.js';
 import { Bar } from 'react-chartjs-2';
 import { useHistogramData } from '../../../hooks/useHistogram';
+import { useFilterStore } from '../../../store/filterStore';
+import {
+  sortDatesForRange,
+  sortMonthsForRange,
+  getAggregationLevel,
+  groupDatesByWeek,
+} from '../../../utils/dateUtils';
+import { ChartDateRangeSelector } from './ChartDateRangeSelector';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -37,6 +45,7 @@ interface Props {
 }
 
 export function WindHistogram({ spotId }: Props) {
+  const { startDate, endDate } = useFilterStore();
   const { data, isLoading, error } = useHistogramData(spotId);
 
   if (isLoading) {
@@ -55,25 +64,56 @@ export function WindHistogram({ spotId }: Props) {
     );
   }
 
-  // Sort dates and aggregate monthly
-  const sortedDates = Object.keys(data.daily_data).sort();
+  // Sort dates chronologically (handles year-wrap ranges like Dec-Jan)
+  const sortedDates = sortDatesForRange(Object.keys(data.daily_data), startDate, endDate);
+  const aggregationLevel = getAggregationLevel(startDate, endDate);
 
-  // Group by month
-  const monthlyData: Record<string, number[][]> = {};
-  for (const date of sortedDates) {
-    const month = date.split('-')[0];
-    if (!monthlyData[month]) {
-      monthlyData[month] = [];
-    }
-    monthlyData[month].push(data.daily_data[date]);
-  }
-
-  // Average each month
-  const months = Object.keys(monthlyData).sort();
-  const monthLabels = months.map((m) => {
+  // Helper to format date label (e.g., "Jan 14")
+  const formatDateLabel = (mmdd: string) => {
+    const [month, day] = mmdd.split('-').map(Number);
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    return monthNames[parseInt(m) - 1];
-  });
+    return `${monthNames[month - 1]} ${day}`;
+  };
+
+  // Aggregate data based on the level
+  let labels: string[];
+  let groupedData: Record<string, number[][]>;
+  let sortedKeys: string[];
+
+  if (aggregationLevel === 'daily') {
+    // Daily: show each day directly (data already has ±2 week moving average from backend)
+    labels = sortedDates.map(formatDateLabel);
+    groupedData = Object.fromEntries(sortedDates.map((d) => [d, [data.daily_data[d]]]));
+    sortedKeys = sortedDates;
+  } else if (aggregationLevel === 'weekly') {
+    // Weekly: group by week number
+    const { weekData, sortedWeeks } = groupDatesByWeek(sortedDates, startDate, endDate);
+    groupedData = Object.fromEntries(
+      sortedWeeks.map((week) => [week, weekData[week].map((d) => data.daily_data[d])])
+    );
+    sortedKeys = sortedWeeks;
+    // Label weeks by mid-week date for clarity
+    labels = sortedWeeks.map((week) => {
+      const weekDates = weekData[week];
+      const midDate = weekDates[Math.floor(weekDates.length / 2)];
+      return formatDateLabel(midDate);
+    });
+  } else {
+    // Monthly: group by month (original behavior)
+    const monthlyData: Record<string, number[][]> = {};
+    for (const date of sortedDates) {
+      const month = date.split('-')[0];
+      if (!monthlyData[month]) {
+        monthlyData[month] = [];
+      }
+      monthlyData[month].push(data.daily_data[date]);
+    }
+    const months = sortMonthsForRange(Object.keys(monthlyData), startDate, endDate);
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    labels = months.map((m) => monthNames[parseInt(m) - 1]);
+    groupedData = monthlyData;
+    sortedKeys = months;
+  }
 
   // Create bin labels
   const binLabels = data.bins.slice(0, -1).map((bin, idx) => {
@@ -87,8 +127,8 @@ export function WindHistogram({ spotId }: Props) {
   // Create datasets for each wind bin (stacked)
   const datasets = binLabels.map((label, binIdx) => ({
     label: `${label} kts`,
-    data: months.map((month) => {
-      const histograms = monthlyData[month];
+    data: sortedKeys.map((key) => {
+      const histograms = groupedData[key];
       const avgCount = histograms.reduce((sum, h) => sum + (h[binIdx] || 0), 0) / histograms.length;
       return avgCount;
     }),
@@ -96,7 +136,7 @@ export function WindHistogram({ spotId }: Props) {
   }));
 
   const chartData = {
-    labels: monthLabels,
+    labels,
     datasets,
   };
 
@@ -122,6 +162,12 @@ export function WindHistogram({ spotId }: Props) {
     scales: {
       x: {
         stacked: true,
+        ticks: {
+          maxRotation: aggregationLevel === 'daily' ? 45 : 0,
+          autoSkip: true,
+          maxTicksLimit: aggregationLevel === 'daily' ? 15 : undefined,
+          font: { size: aggregationLevel === 'daily' ? 9 : 11 },
+        },
       },
       y: {
         stacked: true,
@@ -134,8 +180,10 @@ export function WindHistogram({ spotId }: Props) {
   };
 
   return (
-    <div className="h-full">
-      <Bar data={chartData} options={options} />
-    </div>
+    <ChartDateRangeSelector dates={sortedDates}>
+      <div className="h-full">
+        <Bar data={chartData} options={options} />
+      </div>
+    </ChartDateRangeSelector>
   );
 }
