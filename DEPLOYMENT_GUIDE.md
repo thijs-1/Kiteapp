@@ -79,8 +79,8 @@ sudo useradd -m -s /bin/bash kiteapp
 sudo su - kiteapp
 
 # Create application directory in home
-mkdir -p ~/app
-cd ~/app
+mkdir -p ~/kiteapp
+cd ~/kiteapp
 ```
 
 ---
@@ -90,7 +90,7 @@ cd ~/app
 ### 1. Clone Repository
 
 ```bash
-# As kiteapp user in ~/app
+# As kiteapp user in ~/kiteapp
 git clone https://github.com/yourusername/kiteapp.git .
 
 # Or upload via SCP/SFTP if using private repository
@@ -143,7 +143,7 @@ cors_origins: list = ["https://yourdomain.com"]  # Update this
 
 ```bash
 # Navigate to frontend directory
-cd ~/app/frontend
+cd ~/kiteapp/frontend
 
 # Install dependencies
 npm install
@@ -160,7 +160,7 @@ Ensure processed data files are present:
 
 ```bash
 # Verify data directory structure
-ls -la ~/app/data/processed/
+ls -la ~/kiteapp/data/processed/
 
 # Expected files:
 # - spots.pkl
@@ -222,7 +222,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
 
     # Root directory for static files
-    root /home/kiteapp/app/frontend/dist;
+    root /home/kiteapp/kiteapp/frontend/dist;
     index index.html;
 
     # Gzip compression
@@ -315,11 +315,11 @@ After=network.target
 Type=simple
 User=kiteapp
 Group=kiteapp
-WorkingDirectory=/home/kiteapp/app
-Environment="PATH=/home/kiteapp/app/venv/bin"
+WorkingDirectory=/home/kiteapp/kiteapp
+Environment="PATH=/home/kiteapp/kiteapp/venv/bin"
 
 # Using Uvicorn (simple and efficient for homelab)
-ExecStart=/home/kiteapp/app/venv/bin/uvicorn \
+ExecStart=/home/kiteapp/kiteapp/venv/bin/uvicorn \
     backend.main:app \
     --host 127.0.0.1 \
     --port 8000 \
@@ -461,7 +461,7 @@ chmod 600 ~/.cdsapirc
 
 ```bash
 # Activate virtual environment
-cd ~/app
+cd ~/kiteapp
 source venv/bin/activate
 
 # Test with one grid cell first
@@ -485,7 +485,7 @@ crontab -e
 Add this line (runs January 1st at 2 AM each year):
 
 ```cron
-0 2 1 1 * cd ~/app && ~/app/venv/bin/python -m data_pipelines.main --cleanup >> ~/app/logs/pipeline.log 2>&1
+0 2 1 1 * cd ~/kiteapp && ~/kiteapp/venv/bin/python -m data_pipelines.main --cleanup >> ~/kiteapp/logs/pipeline.log 2>&1
 ```
 
 **Note:** ERA5 historical data changes infrequently. You may prefer to run the pipeline manually when needed rather than scheduling it.
@@ -508,9 +508,9 @@ sudo tail -f /var/log/kiteapp/error.log
 
 # Common issues:
 # - Port 8000 already in use: sudo lsof -i :8000
-# - Missing data files: ls -la ~/app/data/processed/
-# - Wrong Python version: ~/app/venv/bin/python --version
-# - Missing dependencies: cd ~/app && source venv/bin/activate && pip install -r requirements.txt
+# - Missing data files: ls -la ~/kiteapp/data/processed/
+# - Wrong Python version: ~/kiteapp/venv/bin/python --version
+# - Missing dependencies: cd ~/kiteapp && source venv/bin/activate && pip install -r requirements.txt
 ```
 
 **502 Bad Gateway:**
@@ -534,14 +534,14 @@ grep -r "proxy_pass" /etc/nginx/sites-enabled/kiteapp
 
 ```bash
 # Verify build files exist
-ls -la ~/app/frontend/dist/
-ls -la ~/app/frontend/dist/index.html
+ls -la ~/kiteapp/frontend/dist/
+ls -la ~/kiteapp/frontend/dist/index.html
 
 # Check nginx root path is correct
 sudo nginx -T | grep -A 5 "server_name yourdomain.com"
 
 # Rebuild frontend if needed
-cd ~/app/frontend
+cd ~/kiteapp/frontend
 npm run build
 
 # Check browser console (F12) for JavaScript errors
@@ -608,11 +608,11 @@ sudo systemctl reload nginx
 
 ```bash
 # Fix application directory ownership (should already be correct)
-sudo chown -R kiteapp:kiteapp /home/kiteapp/app
+sudo chown -R kiteapp:kiteapp /home/kiteapp/kiteapp
 
 # Fix permissions if needed
-chmod -R 755 ~/app
-chmod 644 ~/app/data/processed/*.pkl
+chmod -R 755 ~/kiteapp
+chmod 644 ~/kiteapp/data/processed/*.pkl
 
 # Fix service file permissions
 sudo chmod 644 /etc/systemd/system/kiteapp.service
@@ -643,7 +643,7 @@ sudo tail -f /var/log/kiteapp/access.log
 sudo tail -f /var/log/nginx/access.log
 
 # Verify data files are accessible and not corrupted
-cd ~/app
+cd ~/kiteapp
 source venv/bin/activate
 python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'rb')); print(f'Loaded {len(data)} spots')"
 ```
@@ -656,7 +656,7 @@ python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'r
 
 ```bash
 # As kiteapp user
-cd ~/app
+cd ~/kiteapp
 git pull origin main
 
 # Update backend dependencies
@@ -708,7 +708,7 @@ sudo apt update
 sudo apt upgrade -y
 
 # Update Python packages
-cd ~/app
+cd ~/kiteapp
 source venv/bin/activate
 pip list --outdated
 pip install -r requirements.txt --upgrade
@@ -727,10 +727,10 @@ npm update
 
 | Path | Description |
 |------|-------------|
-| `/home/kiteapp/app` | Application root |
-| `/home/kiteapp/app/venv` | Python virtual environment |
-| `/home/kiteapp/app/frontend/dist` | Built frontend files |
-| `/home/kiteapp/app/data/processed` | Data files |
+| `/home/kiteapp/kiteapp` | Application root |
+| `/home/kiteapp/kiteapp/venv` | Python virtual environment |
+| `/home/kiteapp/kiteapp/frontend/dist` | Built frontend files |
+| `/home/kiteapp/kiteapp/data/processed` | Data files |
 | `/home/kiteapp/.env` | Environment configuration |
 | `/etc/nginx/sites-available/kiteapp` | Nginx configuration |
 | `/etc/systemd/system/kiteapp.service` | Systemd service file |
@@ -753,10 +753,10 @@ sudo tail -f /var/log/kiteapp/error.log
 sudo tail -f /var/log/nginx/error.log
 
 # Rebuild frontend
-cd ~/app/frontend && npm run build
+cd ~/kiteapp/frontend && npm run build
 
 # Activate Python environment
-cd ~/app && source venv/bin/activate
+cd ~/kiteapp && source venv/bin/activate
 ```
 
 ### Post-Deployment Verification
@@ -771,7 +771,7 @@ After deployment, verify everything works:
 - [ ] Frontend loads in browser: `https://yourdomain.com`
 - [ ] API calls work from frontend (check browser console)
 - [ ] SSL certificate is valid (green padlock in browser)
-- [ ] Data files exist: `ls -la ~/app/data/processed/`
+- [ ] Data files exist: `ls -la ~/kiteapp/data/processed/`
 
 ---
 
