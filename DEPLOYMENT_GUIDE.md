@@ -91,7 +91,7 @@ cd ~/kiteapp
 
 ```bash
 # As kiteapp user in ~/kiteapp
-git clone https://github.com/yourusername/kiteapp.git .
+git clone https://github.com/thijs-1/kiteapp.git .
 
 # Or upload via SCP/SFTP if using private repository
 ```
