@@ -2,6 +2,8 @@
 
 Step-by-step guide for deploying Kiteapp on an Ubuntu server with nginx (no containerization).
 
+**Note:** This guide is optimized for homelab/personal server deployments.
+
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
@@ -73,13 +75,12 @@ sudo useradd -m -s /bin/bash kiteapp
 ### 4. Setup Application Directory
 
 ```bash
-# Create application directory
-sudo mkdir -p /var/www/kiteapp
-sudo chown kiteapp:kiteapp /var/www/kiteapp
-
 # Switch to application user
 sudo su - kiteapp
-cd /var/www/kiteapp
+
+# Create application directory in home
+mkdir -p ~/app
+cd ~/app
 ```
 
 ---
@@ -89,7 +90,7 @@ cd /var/www/kiteapp
 ### 1. Clone Repository
 
 ```bash
-# As kiteapp user in /var/www/kiteapp
+# As kiteapp user in ~/app
 git clone https://github.com/yourusername/kiteapp.git .
 
 # Or upload via SCP/SFTP if using private repository
@@ -110,9 +111,6 @@ pip install --upgrade pip
 # Install Python dependencies
 pip install -r requirements.txt
 
-# Install production server
-pip install gunicorn
-
 # Test backend (optional)
 python -m backend.main  # Should start on port 8000
 # Press Ctrl+C to stop
@@ -123,7 +121,7 @@ python -m backend.main  # Should start on port 8000
 Create environment file:
 
 ```bash
-nano /var/www/kiteapp/.env
+nano ~/.env
 ```
 
 Add configuration (adjust domain as needed):
@@ -145,7 +143,7 @@ cors_origins: list = ["https://yourdomain.com"]  # Update this
 
 ```bash
 # Navigate to frontend directory
-cd /var/www/kiteapp/frontend
+cd ~/app/frontend
 
 # Install dependencies
 npm install
@@ -162,7 +160,7 @@ Ensure processed data files are present:
 
 ```bash
 # Verify data directory structure
-ls -la /var/www/kiteapp/data/processed/
+ls -la ~/app/data/processed/
 
 # Expected files:
 # - spots.pkl
@@ -224,7 +222,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
 
     # Root directory for static files
-    root /var/www/kiteapp/frontend/dist;
+    root /home/kiteapp/app/frontend/dist;
     index index.html;
 
     # Gzip compression
@@ -314,23 +312,18 @@ Description=Kiteapp FastAPI Backend
 After=network.target
 
 [Service]
-Type=notify
+Type=simple
 User=kiteapp
 Group=kiteapp
-WorkingDirectory=/var/www/kiteapp
-Environment="PATH=/var/www/kiteapp/venv/bin"
-EnvironmentFile=/var/www/kiteapp/.env
+WorkingDirectory=/home/kiteapp/app
+Environment="PATH=/home/kiteapp/app/venv/bin"
 
-# Using Gunicorn with Uvicorn workers (production-ready)
-ExecStart=/var/www/kiteapp/venv/bin/gunicorn \
-    --bind 127.0.0.1:8000 \
-    --workers 4 \
-    --worker-class uvicorn.workers.UvicornWorker \
-    --timeout 120 \
-    --access-logfile /var/log/kiteapp/access.log \
-    --error-logfile /var/log/kiteapp/error.log \
-    --log-level info \
-    backend.main:app
+# Using Uvicorn (simple and efficient for homelab)
+ExecStart=/home/kiteapp/app/venv/bin/uvicorn \
+    backend.main:app \
+    --host 127.0.0.1 \
+    --port 8000 \
+    --log-level info
 
 # Restart policy
 Restart=always
@@ -343,6 +336,8 @@ PrivateTmp=true
 [Install]
 WantedBy=multi-user.target
 ```
+
+**Note:** For a homelab setup, Uvicorn alone is sufficient. If you later need higher performance with multiple workers, you can switch to Gunicorn + Uvicorn workers.
 
 ### 3. Create Log Directory
 
@@ -466,7 +461,7 @@ chmod 600 ~/.cdsapirc
 
 ```bash
 # Activate virtual environment
-cd /var/www/kiteapp
+cd ~/app
 source venv/bin/activate
 
 # Test with one grid cell first
@@ -490,7 +485,7 @@ crontab -e
 Add this line (runs first of each month at 2 AM):
 
 ```cron
-0 2 1 * * cd /var/www/kiteapp && /var/www/kiteapp/venv/bin/python -m data_pipelines.main --cleanup >> /var/log/kiteapp/pipeline.log 2>&1
+0 2 1 * * cd ~/app && ~/app/venv/bin/python -m data_pipelines.main --cleanup >> ~/app/logs/pipeline.log 2>&1
 ```
 
 ---
@@ -511,9 +506,9 @@ sudo tail -f /var/log/kiteapp/error.log
 
 # Common issues:
 # - Port 8000 already in use: sudo lsof -i :8000
-# - Missing data files: ls -la /var/www/kiteapp/data/processed/
-# - Wrong Python version: /var/www/kiteapp/venv/bin/python --version
-# - Missing dependencies: source venv/bin/activate && pip install -r requirements.txt
+# - Missing data files: ls -la ~/app/data/processed/
+# - Wrong Python version: ~/app/venv/bin/python --version
+# - Missing dependencies: cd ~/app && source venv/bin/activate && pip install -r requirements.txt
 ```
 
 **502 Bad Gateway:**
@@ -537,14 +532,14 @@ grep -r "proxy_pass" /etc/nginx/sites-enabled/kiteapp
 
 ```bash
 # Verify build files exist
-ls -la /var/www/kiteapp/frontend/dist/
-ls -la /var/www/kiteapp/frontend/dist/index.html
+ls -la ~/app/frontend/dist/
+ls -la ~/app/frontend/dist/index.html
 
 # Check nginx root path is correct
 sudo nginx -T | grep -A 5 "server_name yourdomain.com"
 
 # Rebuild frontend if needed
-cd /var/www/kiteapp/frontend
+cd ~/app/frontend
 npm run build
 
 # Check browser console (F12) for JavaScript errors
@@ -610,12 +605,12 @@ sudo systemctl reload nginx
 ### Permission Issues
 
 ```bash
-# Fix application directory ownership
-sudo chown -R kiteapp:kiteapp /var/www/kiteapp
+# Fix application directory ownership (should already be correct)
+sudo chown -R kiteapp:kiteapp /home/kiteapp/app
 
-# Fix permissions
-sudo chmod -R 755 /var/www/kiteapp
-sudo chmod 644 /var/www/kiteapp/data/processed/*.pkl
+# Fix permissions if needed
+chmod -R 755 ~/app
+chmod 644 ~/app/data/processed/*.pkl
 
 # Fix service file permissions
 sudo chmod 644 /etc/systemd/system/kiteapp.service
@@ -632,11 +627,8 @@ top -u kiteapp
 # or
 htop -u kiteapp
 
-# Reduce Gunicorn workers if needed
-sudo nano /etc/systemd/system/kiteapp.service
-# Change --workers 4 to --workers 2
-sudo systemctl daemon-reload
-sudo systemctl restart kiteapp
+# Check what's consuming memory
+ps aux | grep kiteapp
 ```
 
 **Slow API responses:**
@@ -649,7 +641,7 @@ sudo tail -f /var/log/kiteapp/access.log
 sudo tail -f /var/log/nginx/access.log
 
 # Verify data files are accessible and not corrupted
-cd /var/www/kiteapp
+cd ~/app
 source venv/bin/activate
 python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'rb')); print(f'Loaded {len(data)} spots')"
 ```
@@ -661,9 +653,8 @@ python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'r
 ### Updating the Application
 
 ```bash
-# Pull latest code
-cd /var/www/kiteapp
-sudo su - kiteapp
+# As kiteapp user
+cd ~/app
 git pull origin main
 
 # Update backend dependencies
@@ -676,7 +667,6 @@ npm install
 npm run build
 
 # Restart backend service
-exit  # Exit kiteapp user
 sudo systemctl restart kiteapp
 
 # Reload nginx if configuration changed
@@ -716,7 +706,7 @@ sudo apt update
 sudo apt upgrade -y
 
 # Update Python packages
-cd /var/www/kiteapp
+cd ~/app
 source venv/bin/activate
 pip list --outdated
 pip install -r requirements.txt --upgrade
@@ -735,10 +725,11 @@ npm update
 
 | Path | Description |
 |------|-------------|
-| `/var/www/kiteapp` | Application root |
-| `/var/www/kiteapp/venv` | Python virtual environment |
-| `/var/www/kiteapp/frontend/dist` | Built frontend files |
-| `/var/www/kiteapp/data/processed` | Data files |
+| `/home/kiteapp/app` | Application root |
+| `/home/kiteapp/app/venv` | Python virtual environment |
+| `/home/kiteapp/app/frontend/dist` | Built frontend files |
+| `/home/kiteapp/app/data/processed` | Data files |
+| `/home/kiteapp/.env` | Environment configuration |
 | `/etc/nginx/sites-available/kiteapp` | Nginx configuration |
 | `/etc/systemd/system/kiteapp.service` | Systemd service file |
 | `/var/log/kiteapp/` | Application logs |
@@ -760,10 +751,10 @@ sudo tail -f /var/log/kiteapp/error.log
 sudo tail -f /var/log/nginx/error.log
 
 # Rebuild frontend
-cd /var/www/kiteapp/frontend && npm run build
+cd ~/app/frontend && npm run build
 
 # Activate Python environment
-cd /var/www/kiteapp && source venv/bin/activate
+cd ~/app && source venv/bin/activate
 ```
 
 ### Post-Deployment Verification
@@ -778,7 +769,7 @@ After deployment, verify everything works:
 - [ ] Frontend loads in browser: `https://yourdomain.com`
 - [ ] API calls work from frontend (check browser console)
 - [ ] SSL certificate is valid (green padlock in browser)
-- [ ] Data files exist: `ls -la /var/www/kiteapp/data/processed/`
+- [ ] Data files exist: `ls -la ~/app/data/processed/`
 
 ---
 
