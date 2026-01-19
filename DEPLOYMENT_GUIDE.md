@@ -475,18 +475,20 @@ python -m data_pipelines.main --cleanup
 
 ### 3. Schedule Regular Updates (Optional)
 
-If you want monthly data updates:
+If you want annual data updates:
 
 ```bash
 # Edit crontab as kiteapp user
 crontab -e
 ```
 
-Add this line (runs first of each month at 2 AM):
+Add this line (runs January 1st at 2 AM each year):
 
 ```cron
-0 2 1 * * cd ~/app && ~/app/venv/bin/python -m data_pipelines.main --cleanup >> ~/app/logs/pipeline.log 2>&1
+0 2 1 1 * cd ~/app && ~/app/venv/bin/python -m data_pipelines.main --cleanup >> ~/app/logs/pipeline.log 2>&1
 ```
+
+**Note:** ERA5 historical data changes infrequently. You may prefer to run the pipeline manually when needed rather than scheduling it.
 
 ---
 
