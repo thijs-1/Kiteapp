@@ -2,7 +2,6 @@
 from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
-from concurrent.futures import ThreadPoolExecutor, as_completed
 import cdsapi
 
 from data_pipelines.config import (
@@ -85,44 +84,11 @@ class CDSService:
 
         return output_path
 
-    def _download_year_worker(
-        self,
-        bbox: BoundingBox,
-        cell_id: str,
-        year: int,
-    ) -> Optional[Path]:
-        """Download a single year (for parallel execution)."""
-        # Each thread needs its own client instance
-        client = cdsapi.Client()
-        output_path = self.get_yearly_path(cell_id, year)
-
-        request = {
-            "product_type": "reanalysis",
-            "variable": [
-                "10m_u_component_of_wind",
-                "10m_v_component_of_wind",
-            ],
-            "year": str(year),
-            "month": [f"{m:02d}" for m in range(1, 13)],
-            "day": [f"{d:02d}" for d in range(1, 32)],
-            "time": [f"{h:02d}:00" for h in range(24)],
-            "area": bbox.to_cds_area(),
-            "data_format": "netcdf",
-        }
-
-        try:
-            client.retrieve(ERA5_DATASET, request, str(output_path))
-            return output_path
-        except Exception as e:
-            print(f"    Error downloading {year}: {e}")
-            return None
-
     def download_era5_wind(
         self,
         bbox: BoundingBox,
         cell_id: str,
         skip_existing: bool = True,
-        max_parallel: int = 5,
     ) -> List[Path]:
         """
         Download ERA5 wind data for a bounding box (one file per year).
@@ -131,50 +97,20 @@ class CDSService:
             bbox: Bounding box to download data for
             cell_id: Unique identifier for the grid cell
             skip_existing: Skip download if file already exists
-            max_parallel: Maximum number of parallel downloads
 
         Returns:
             List of paths to yearly NetCDF files
         """
         years = self.get_year_range()
+        downloaded_files = []
 
-        # Check which years need downloading
-        years_to_download = []
-        existing_files = []
+        for i, year in enumerate(years, 1):
+            result = self.download_year(bbox, cell_id, year, skip_existing)
+            if result:
+                downloaded_files.append(result)
+                print(f"    [{i}/{len(years)}] {year}: Done")
 
-        for year in years:
-            year_path = self.get_yearly_path(cell_id, year)
-            if skip_existing and year_path.exists():
-                existing_files.append(year_path)
-            else:
-                years_to_download.append(year)
-
-        if existing_files and not years_to_download:
-            print(f"  All {len(existing_files)} years already exist, skipping download")
-            return sorted(existing_files)
-
-        if years_to_download:
-            print(f"  Downloading {len(years_to_download)} years ({years_to_download[0]}-{years_to_download[-1]})...")
-            completed = 0
-
-            with ThreadPoolExecutor(max_workers=max_parallel) as executor:
-                futures = {
-                    executor.submit(self._download_year_worker, bbox, cell_id, year): year
-                    for year in years_to_download
-                }
-
-                for future in as_completed(futures):
-                    year = futures[future]
-                    result = future.result()
-                    completed += 1
-
-                    if result:
-                        existing_files.append(result)
-                        print(f"    [{completed}/{len(years_to_download)}] {year}: Done")
-                    else:
-                        print(f"    [{completed}/{len(years_to_download)}] {year}: Failed")
-
-        return sorted(existing_files)
+        return sorted(downloaded_files)
 
     def download_for_cell(
         self,
