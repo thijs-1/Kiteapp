@@ -30,9 +30,10 @@ npm run lint                   # ESLint
 .\venv\Scripts\python -m data_pipelines.enrich_spots           # One-time: add country info to spots
 .\venv\Scripts\python -m data_pipelines.main --max-cells 1     # Test with 1 grid cell
 .\venv\Scripts\python -m data_pipelines.main --cleanup         # Full run, delete raw files after
+.\venv\Scripts\python -m data_pipelines.main --source arco     # Use ARCO (Google Cloud) instead of CDS
 ```
 
-Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-process`
+Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-process`, `--source [cds|arco]`
 
 ## Architecture
 
@@ -44,8 +45,9 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 
 ### Data Pipeline (data_pipelines/)
 - `PipelineOrchestrator` in `main.py` coordinates the workflow
-- Divides globe into 30×30 degree grid cells
-- Downloads ERA5 data via CDS API, processes wind components (u,v) to strength/direction
+- Divides globe into 90°×60° grid cells (12 total, ~6-8 cells with spots)
+- Downloads ERA5 data via CDS API (Copernicus, default) or ARCO (Google Cloud)
+- Processes wind components (u,v) to strength/direction
 - Builds daily histograms: 1D (strength only) and 2D (strength × direction)
 - Wind bins: 2.5 knot increments (0-35 + infinity), direction: 10-degree increments
 
@@ -75,10 +77,19 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 - Wind direction: "going to" compass direction (90° = wind from west going east)
 - Histogram shapes: 1D is 365×16, 2D is 365×16×36
 
-## CDS API
+## ERA5 Data Sources
 
-Requires `~/.cdsapirc` (or `%USERPROFILE%\.cdsapirc`) with Copernicus credentials:
+### CDS API (Default)
+Downloads directly to disk (no RAM constraints). Requires `~/.cdsapirc` (or `%USERPROFILE%\.cdsapirc`) with Copernicus credentials:
 ```
 url: https://cds.climate.copernicus.eu/api
 key: <uid>:<api-key>
 ```
+Uses larger 90°×60° grid cells to reduce queue requests (~60-80 total vs 1000+).
+
+### ARCO ERA5 (Alternative)
+Uses Google Cloud's Analysis-Ready Cloud-Optimized ERA5 dataset. No credentials needed, no queue wait times.
+- Direct Zarr access via `gs://gcp-public-data-arco-era5/`
+- Requires `gcsfs` package (included in requirements.txt)
+- Note: Zarr chunking downloads ~12GB to extract ~14MB useful data per cell
+- Use `--source arco` flag to use ARCO instead of CDS

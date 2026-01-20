@@ -25,6 +25,7 @@ from data_pipelines.config import (
 )
 from data_pipelines.services.grid_service import GridService
 from data_pipelines.services.cds_service import CDSService
+from data_pipelines.services.arco_service import ARCOService
 from data_pipelines.services.wind_processor import WindProcessor
 from data_pipelines.services.histogram_builder import HistogramBuilder
 from data_pipelines.utils.file_utils import save_pickle
@@ -38,6 +39,7 @@ class PipelineOrchestrator:
         skip_existing_downloads: bool = True,
         skip_existing_histograms: bool = True,
         cleanup_after_processing: bool = False,
+        data_source: str = "cds",
     ):
         """
         Initialize the pipeline.
@@ -46,9 +48,16 @@ class PipelineOrchestrator:
             skip_existing_downloads: Skip downloading files that already exist
             skip_existing_histograms: Skip processing spots with existing histograms
             cleanup_after_processing: Delete raw NetCDF files after processing each cell
+            data_source: Data source to use ("arco" for Google Cloud, "cds" for Copernicus API)
         """
         self.grid_service = GridService()
-        self.cds_service = CDSService()
+        self.data_source = data_source
+        if data_source == "arco":
+            self.data_service = ARCOService()
+            print("Using ARCO ERA5 (Google Cloud) - no queue wait times")
+        else:
+            self.data_service = CDSService()
+            print("Using CDS API (Copernicus) - may have queue wait times")
         self.wind_processor = WindProcessor()
         self.histogram_builder = HistogramBuilder()
 
@@ -175,7 +184,7 @@ class PipelineOrchestrator:
         download_bbox = self.grid_service.get_download_bbox(cell)
 
         # Download ERA5 data for this cell (returns list of yearly files)
-        nc_paths = self.cds_service.download_for_cell(
+        nc_paths = self.data_service.download_for_cell(
             download_bbox,
             cell_index,
             skip_existing=self.skip_existing_downloads,
@@ -183,7 +192,7 @@ class PipelineOrchestrator:
 
         # If download was skipped (all files exist), get existing files
         if not nc_paths:
-            nc_paths = self.cds_service.get_existing_files_for_cell(cell_index)
+            nc_paths = self.data_service.get_existing_files_for_cell(cell_index)
             if nc_paths:
                 stats["download_skipped"] = True
 
@@ -325,6 +334,12 @@ def main():
         action="store_true",
         help="Delete raw NetCDF files after processing each cell (saves ~3GB per cell)",
     )
+    parser.add_argument(
+        "--source",
+        choices=["arco", "cds"],
+        default="cds",
+        help="Data source: 'cds' (Copernicus API, default) or 'arco' (Google Cloud)",
+    )
 
     args = parser.parse_args()
 
@@ -332,6 +347,7 @@ def main():
         skip_existing_downloads=not args.force_download,
         skip_existing_histograms=not args.force_process,
         cleanup_after_processing=args.cleanup,
+        data_source=args.source,
     )
 
     pipeline.run(max_cells=args.max_cells)

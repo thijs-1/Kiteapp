@@ -24,9 +24,9 @@ WIND_BINS = list(np.arange(0, 37.5, 2.5)) + [float('inf')]
 # Direction bins: [-5, 5, 15, 25, ..., 345, 355] (36 bins of 10 degrees)
 DIRECTION_BINS = list(range(-5, 360, 10))
 
-# Grid configuration (30x30 cells covering the globe)
-GRID_SIZE_LAT = 6   # degrees (180° / 30 cells)
-GRID_SIZE_LON = 12  # degrees (360° / 30 cells)
+# Grid configuration (larger cells to reduce CDS queue requests)
+GRID_SIZE_LAT = 90  # degrees (2 cells latitude)
+GRID_SIZE_LON = 60  # degrees (6 cells longitude)
 GRID_EXPANSION_KM = 5  # km to expand each grid cell for downloads
 
 # Unit conversion
