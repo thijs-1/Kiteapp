@@ -458,6 +458,20 @@ chmod 600 ~/.cdsapirc
 ```
 
 ### 2. Run Data Pipeline
+You'll want to run this in a 'screen' as it is a very long running script:
+
+```bash
+screen -S mysession
+```
+
+Press Ctrl+A then D to detach.
+
+Reattach later with:
+
+```Bash
+screen -r mysession
+```
+
 
 ```bash
 # Activate virtual environment
