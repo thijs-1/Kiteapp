@@ -1,25 +1,30 @@
 """
 Main pipeline orchestrator for processing kite spot wind data.
 
-This pipeline:
-1. Loads enriched spots from data/processed/spots.pkl
-2. Divides globe into 30x30 degree grid cells
-3. For each cell with spots:
-   a. Downloads 10 years of ERA5 wind data from CDS
-   b. Processes wind data for each spot in the cell
-   c. Builds daily 1D and 2D histograms
-   d. Optionally deletes raw data to save disk space
-4. Saves all 1D histograms as a single 3D array (num_spots x 366 x num_bins)
+This pipeline has two phases:
+
+Phase 1 - Extract Time Series (chunk by chunk):
+  1. Download one 6-month global ERA5 chunk (~36 GB)
+  2. Extract wind time series for all spots → save to intermediate files
+  3. Delete the global chunk
+  4. Repeat for all chunks (20 total for 10 years)
+
+Phase 2 - Build Histograms:
+  1. Load complete 10-year time series per spot
+  2. Build daily 1D and 2D histograms
+  3. Save histograms
 """
 from pathlib import Path
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import numpy as np
+import xarray as xr
 from tqdm import tqdm
 
 from data_pipelines.config import (
     HISTOGRAMS_1D_FILE,
     HISTOGRAMS_2D_DIR,
     RAW_DATA_DIR,
+    TIMESERIES_DIR,
     WIND_BINS,
     DAYS_OF_YEAR,
 )
@@ -28,6 +33,7 @@ from data_pipelines.services.cds_service import CDSService
 from data_pipelines.services.arco_service import ARCOService
 from data_pipelines.services.wind_processor import WindProcessor
 from data_pipelines.services.histogram_builder import HistogramBuilder
+from data_pipelines.services.timeseries_store import TimeseriesStore
 from data_pipelines.utils.file_utils import save_pickle
 
 
@@ -47,7 +53,7 @@ class PipelineOrchestrator:
         Args:
             skip_existing_downloads: Skip downloading files that already exist
             skip_existing_histograms: Skip processing spots with existing histograms
-            cleanup_after_processing: Delete raw NetCDF files after processing each cell
+            cleanup_after_processing: Delete raw NetCDF files after processing
             data_source: Data source to use ("arco" for Google Cloud, "cds" for Copernicus API)
         """
         self.grid_service = GridService()
@@ -60,6 +66,7 @@ class PipelineOrchestrator:
             print("Using CDS API (Copernicus) - may have queue wait times")
         self.wind_processor = WindProcessor()
         self.histogram_builder = HistogramBuilder()
+        self.timeseries_store = TimeseriesStore()
 
         self.skip_existing_downloads = skip_existing_downloads
         self.skip_existing_histograms = skip_existing_histograms
@@ -68,31 +75,201 @@ class PipelineOrchestrator:
         # Ensure output directories exist
         HISTOGRAMS_2D_DIR.mkdir(parents=True, exist_ok=True)
         HISTOGRAMS_1D_FILE.parent.mkdir(parents=True, exist_ok=True)
+        TIMESERIES_DIR.mkdir(parents=True, exist_ok=True)
 
         # Accumulators for 1D histogram data
-        self._histogram_1d_data: Dict[str, np.ndarray] = {}  # spot_id -> (366, num_bins)
-
-        # Create day-to-index mapping
+        self._histogram_1d_data: Dict[str, np.ndarray] = {}
         self._day_to_idx = {day: idx for idx, day in enumerate(DAYS_OF_YEAR)}
         self._num_bins = len(WIND_BINS) - 1
 
+    # =========================================================================
+    # Phase 1: Extract Time Series (cell-based, time-chunked)
+    # =========================================================================
+
+    def _extract_spots_from_dataset(
+        self,
+        ds: xr.Dataset,
+        spots: List,
+        bbox,
+    ) -> Dict[str, Dict[str, np.ndarray]]:
+        """
+        Extract wind data for all spots from a dataset using vectorized interpolation.
+
+        Returns:
+            Dict mapping spot_id -> {'time', 'strength', 'direction'}
+        """
+        wind_data = self.wind_processor.extract_cell_spots_data(ds, spots, bbox)
+
+        # Split vectorized result into per-spot dicts
+        # Handle duplicate spot_ids by adding suffix for different locations
+        result = {}
+        seen_ids = {}  # spot_id -> count
+
+        for i, spot in enumerate(spots):
+            key = spot.spot_id
+            if key in result:
+                # Duplicate ID - add suffix
+                seen_ids[key] = seen_ids.get(key, 1) + 1
+                key = f"{spot.spot_id}_{seen_ids[key]}"
+
+            result[key] = {
+                "time": wind_data["time"],
+                "strength": wind_data["strength"][:, i],
+                "direction": wind_data["direction"][:, i],
+            }
+        return result
+
+    def _process_cell_arco(
+        self,
+        cell_index: int,
+        cell,
+        periods: List[tuple],
+    ) -> dict:
+        """
+        Process one cell: download all time chunks, extract time series, cleanup.
+
+        Args:
+            cell_index: Index of the cell
+            cell: Cell object with spots
+            periods: List of (start_date, end_date) tuples
+
+        Returns:
+            Dict with processing stats
+        """
+        cell_id = f"cell_{cell_index:04d}"
+        bbox = self.grid_service.get_download_bbox(cell)
+        spots = cell.spots
+
+        stats = {
+            "spots_processed": len(spots),
+            "chunks_processed": 0,
+            "bytes_freed": 0,
+        }
+
+        for start_date, end_date in periods:
+            # Download this cell+time chunk
+            chunk_path = self.data_service.download_cell_period(
+                bbox, cell_id, start_date, end_date,
+                skip_existing=self.skip_existing_downloads,
+            )
+
+            if not chunk_path or not chunk_path.exists():
+                print(f"      Warning: Failed to download chunk")
+                continue
+
+            # Open and extract
+            try:
+                with xr.open_dataset(chunk_path) as ds:
+                    spot_data = self._extract_spots_from_dataset(ds, spots, bbox)
+
+                    # Append to time series store
+                    for spot_id, data in spot_data.items():
+                        self.timeseries_store.append_spot_data(
+                            spot_id,
+                            data["time"],
+                            data["strength"],
+                            data["direction"],
+                        )
+
+                stats["chunks_processed"] += 1
+
+            except Exception as e:
+                print(f"      Error extracting: {e}")
+                import traceback
+                traceback.print_exc()
+
+            # Cleanup this chunk
+            if self.cleanup_after_processing:
+                try:
+                    import gc
+                    gc.collect()  # Help release file handles on Windows
+                    size = chunk_path.stat().st_size
+                    chunk_path.unlink()
+                    stats["bytes_freed"] += size
+                except PermissionError:
+                    print(f"      Warning: Could not delete {chunk_path.name} (file locked)")
+                except Exception as e:
+                    print(f"      Warning: Cleanup error: {e}")
+
+        return stats
+
+    def run_phase1_arco(self, max_cells: Optional[int] = None, max_chunks: Optional[int] = None, test_days: Optional[int] = None) -> dict:
+        """
+        Phase 1: Download and extract time series (ARCO source).
+
+        For each cell, downloads all time chunks, extracts time series for spots
+        in that cell, then cleans up before moving to next cell.
+
+        Args:
+            max_cells: Maximum number of cells to process (for testing)
+            max_chunks: Maximum number of time chunks per cell (for testing)
+
+        Returns:
+            Dict with statistics
+        """
+        print("\n" + "=" * 60)
+        print("PHASE 1: Extract Time Series from ARCO")
+        print("=" * 60)
+
+        cells_with_spots = self.grid_service.get_cells_with_spots()
+        if max_cells:
+            cells_with_spots = cells_with_spots[:max_cells]
+
+        total_spots = sum(len(c.spots) for c in cells_with_spots)
+        print(f"Cells to process: {len(cells_with_spots)}")
+        print(f"Total spots: {total_spots}")
+
+        periods = self.data_service.get_chunk_periods(test_days=test_days)
+        if max_chunks:
+            periods = periods[:max_chunks]
+        print(f"Time chunks per cell: {len(periods)}")
+        if test_days:
+            print(f"TEST MODE: {test_days} days only")
+
+        if self.cleanup_after_processing:
+            print("Cleanup enabled: chunks deleted after extraction")
+
+        stats = {
+            "cells_total": len(cells_with_spots),
+            "cells_processed": 0,
+            "spots_extracted": 0,
+            "chunks_processed": 0,
+            "bytes_freed": 0,
+        }
+
+        for cell_index, cell in enumerate(cells_with_spots):
+            print(f"\nCell {cell_index + 1}/{len(cells_with_spots)}: {len(cell.spots)} spots")
+
+            cell_stats = self._process_cell_arco(cell_index, cell, periods)
+
+            stats["cells_processed"] += 1
+            stats["spots_extracted"] += cell_stats["spots_processed"]
+            stats["chunks_processed"] += cell_stats["chunks_processed"]
+            stats["bytes_freed"] += cell_stats["bytes_freed"]
+
+        print(f"\nPhase 1 complete!")
+        print(f"  Cells processed: {stats['cells_processed']}")
+        print(f"  Chunks processed: {stats['chunks_processed']}")
+        print(f"  Time series size: {self.timeseries_store.get_total_size_mb():.1f} MB")
+        if stats["bytes_freed"] > 0:
+            print(f"  Disk freed: {stats['bytes_freed'] / 1024**3:.1f} GB")
+
+        return stats
+
+    # =========================================================================
+    # Phase 2: Build Histograms
+    # =========================================================================
+
     def histogram_2d_exists(self, spot_id: str) -> bool:
         """Check if 2D histogram file already exists for a spot."""
-        h2d_path = HISTOGRAMS_2D_DIR / f"{spot_id}.pkl"
-        return h2d_path.exists()
-
-    def spot_in_1d_data(self, spot_id: str) -> bool:
-        """Check if spot already has 1D histogram data loaded."""
-        return spot_id in self._histogram_1d_data
+        return (HISTOGRAMS_2D_DIR / f"{spot_id}.pkl").exists()
 
     def save_histogram_2d(self, spot_id: str, hist_2d) -> None:
         """Save 2D histogram data to pickle file."""
-        h2d_path = HISTOGRAMS_2D_DIR / f"{spot_id}.pkl"
-        save_pickle(hist_2d.to_dict(), h2d_path)
+        save_pickle(hist_2d.to_dict(), HISTOGRAMS_2D_DIR / f"{spot_id}.pkl")
 
     def add_histogram_1d(self, spot_id: str, hist_1d) -> None:
         """Add 1D histogram to accumulator."""
-        # Convert daily_counts dict to 2D array (366 x num_bins)
         arr = np.zeros((len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
         for day, counts in hist_1d.daily_counts.items():
             if day in self._day_to_idx:
@@ -108,7 +285,6 @@ class PipelineOrchestrator:
         spot_ids = list(self._histogram_1d_data.keys())
         num_spots = len(spot_ids)
 
-        # Build 3D array: (num_spots, 366, num_bins)
         data = np.zeros((num_spots, len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
         for i, spot_id in enumerate(spot_ids):
             data[i] = self._histogram_1d_data[spot_id]
@@ -133,179 +309,165 @@ class PipelineOrchestrator:
                 self._histogram_1d_data[spot_id] = existing["data"][i]
             print(f"Loaded {len(self._histogram_1d_data)} existing 1D histograms")
 
-    def cleanup_cell_data(self, cell_index: int) -> int:
+    def run_phase2(self) -> dict:
         """
-        Delete raw NetCDF files for a cell.
+        Phase 2: Build histograms from extracted time series.
 
         Returns:
-            Number of bytes freed
+            Dict with statistics
         """
-        cell_id = f"cell_{cell_index:04d}"
-        bytes_freed = 0
+        print("\n" + "=" * 60)
+        print("PHASE 2: Build Histograms from Time Series")
+        print("=" * 60)
 
-        # Delete yearly files
-        for yearly_file in RAW_DATA_DIR.glob(f"era5_wind_{cell_id}_*.nc"):
-            bytes_freed += yearly_file.stat().st_size
-            yearly_file.unlink()
-            print(f"  Deleted: {yearly_file.name}")
+        # Load existing histograms if skipping
+        self.load_existing_1d_histograms()
 
-        return bytes_freed
+        spot_ids = self.timeseries_store.get_all_spot_ids()
+        print(f"Found {len(spot_ids)} spots with time series data")
 
-    def all_spots_processed(self, cell) -> bool:
-        """Check if all spots in a cell already have histograms."""
-        for spot in cell.spots:
-            if not self.spot_in_1d_data(spot.spot_id) or not self.histogram_2d_exists(spot.spot_id):
-                return False
-        return True
-
-    def process_cell(self, cell_index: int, cell) -> dict:
-        """
-        Process a single grid cell.
-
-        Returns:
-            Dict with processing statistics
-        """
         stats = {
-            "spots_total": len(cell.spots),
+            "spots_total": len(spot_ids),
             "spots_processed": 0,
             "spots_skipped": 0,
-            "download_skipped": False,
-            "bytes_freed": 0,
-            "cell_skipped": False,
         }
 
-        # Skip entire cell if all spots already have histograms
-        if self.skip_existing_histograms and self.all_spots_processed(cell):
-            stats["spots_skipped"] = len(cell.spots)
-            stats["cell_skipped"] = True
-            return stats
-
-        # Get expanded bounding box for download
-        download_bbox = self.grid_service.get_download_bbox(cell)
-
-        # Download ERA5 data for this cell (returns list of yearly files)
-        nc_paths = self.data_service.download_for_cell(
-            download_bbox,
-            cell_index,
-            skip_existing=self.skip_existing_downloads,
-        )
-
-        # If download was skipped (all files exist), get existing files
-        if not nc_paths:
-            nc_paths = self.data_service.get_existing_files_for_cell(cell_index)
-            if nc_paths:
-                stats["download_skipped"] = True
-
-        if not nc_paths:
-            print(f"Warning: No NetCDF files found for cell {cell_index}")
-            return stats
-
-        # Process each spot in the cell
-        total_spots = len(cell.spots)
-        for i, spot in enumerate(cell.spots, 1):
-            # Check what needs processing
-            has_1d = self.spot_in_1d_data(spot.spot_id)
-            has_2d = self.histogram_2d_exists(spot.spot_id)
+        for spot_id in tqdm(spot_ids, desc="Building histograms"):
+            # Check if already processed
+            has_1d = spot_id in self._histogram_1d_data
+            has_2d = self.histogram_2d_exists(spot_id)
 
             if self.skip_existing_histograms and has_1d and has_2d:
                 stats["spots_skipped"] += 1
-                print(f"  Spot {i}/{total_spots}: {spot.name} (skipped - already exists)")
                 continue
 
-            print(f"  Spot {i}/{total_spots}: {spot.name}...", end=" ", flush=True)
-
-            # Extract wind data for this spot (using multi-file dataset)
-            wind_data = self.wind_processor.process_netcdf_for_spot(nc_paths, spot)
-
-            if wind_data is None:
-                print("failed")
+            # Load time series
+            data = self.timeseries_store.load_spot_data(spot_id)
+            if data is None:
                 continue
 
             # Build histograms
             hist_1d, hist_2d = self.histogram_builder.build_histograms(
-                spot.spot_id,
-                wind_data["time"],
-                wind_data["strength"],
-                wind_data["direction"],
+                spot_id,
+                data["time"],
+                data["strength"],
+                data["direction"],
             )
 
-            # Add 1D to accumulator
+            # Save
             if not has_1d:
-                self.add_histogram_1d(spot.spot_id, hist_1d)
-
-            # Save 2D histogram
+                self.add_histogram_1d(spot_id, hist_1d)
             if not has_2d:
-                self.save_histogram_2d(spot.spot_id, hist_2d)
+                self.save_histogram_2d(spot_id, hist_2d)
 
             stats["spots_processed"] += 1
-            print("done")
 
-        # Cleanup raw data if requested
-        if self.cleanup_after_processing:
-            stats["bytes_freed"] = self.cleanup_cell_data(cell_index)
+        # Save combined 1D histograms
+        print("\nSaving combined 1D histogram data...")
+        self.save_all_1d_histograms()
+
+        print(f"\nPhase 2 complete!")
+        print(f"  Spots processed: {stats['spots_processed']}")
+        print(f"  Spots skipped: {stats['spots_skipped']}")
 
         return stats
 
-    def run(self, max_cells: Optional[int] = None) -> dict:
+    # =========================================================================
+    # Legacy CDS flow (sequential, cell-based)
+    # =========================================================================
+
+    def run_cds(self, max_cells: Optional[int] = None) -> dict:
+        """Run the legacy CDS pipeline (cell-based, sequential)."""
+        print("Running legacy CDS pipeline...")
+
+        cells_with_spots = self.grid_service.get_cells_with_spots()
+        self.load_existing_1d_histograms()
+
+        if max_cells:
+            cells_with_spots = cells_with_spots[:max_cells]
+
+        stats = {
+            "cells_processed": 0,
+            "spots_processed": 0,
+            "spots_skipped": 0,
+        }
+
+        for cell_index, cell in enumerate(tqdm(cells_with_spots)):
+            download_bbox = self.grid_service.get_download_bbox(cell)
+            nc_paths = self.data_service.download_for_cell(
+                download_bbox, cell_index,
+                skip_existing=self.skip_existing_downloads,
+            )
+            if not nc_paths:
+                nc_paths = self.data_service.get_existing_files_for_cell(cell_index)
+            if not nc_paths:
+                continue
+
+            for spot in cell.spots:
+                has_1d = spot.spot_id in self._histogram_1d_data
+                has_2d = self.histogram_2d_exists(spot.spot_id)
+
+                if self.skip_existing_histograms and has_1d and has_2d:
+                    stats["spots_skipped"] += 1
+                    continue
+
+                wind_data = self.wind_processor.process_netcdf_for_spot(nc_paths, spot)
+                if wind_data is None:
+                    continue
+
+                hist_1d, hist_2d = self.histogram_builder.build_histograms(
+                    spot.spot_id,
+                    wind_data["time"],
+                    wind_data["strength"],
+                    wind_data["direction"],
+                )
+
+                if not has_1d:
+                    self.add_histogram_1d(spot.spot_id, hist_1d)
+                if not has_2d:
+                    self.save_histogram_2d(spot.spot_id, hist_2d)
+
+                stats["spots_processed"] += 1
+
+            stats["cells_processed"] += 1
+
+            if self.cleanup_after_processing:
+                cell_id = f"cell_{cell_index:04d}"
+                for f in RAW_DATA_DIR.glob(f"era5_wind_{cell_id}_*.nc"):
+                    f.unlink()
+
+        self.save_all_1d_histograms()
+        return stats
+
+    # =========================================================================
+    # Main entry point
+    # =========================================================================
+
+    def run(self, max_cells: Optional[int] = None, max_chunks: Optional[int] = None, test_days: Optional[int] = None) -> dict:
         """
         Run the full pipeline.
 
         Args:
-            max_cells: Maximum number of cells to process (for testing)
+            max_cells: Maximum cells to process (for testing)
+            max_chunks: Maximum time chunks per cell for ARCO mode (for testing)
+            test_days: Use only N days of data (for quick testing)
 
         Returns:
             Dict with overall statistics
         """
         print("Loading spots and building grid...")
         cells_with_spots = self.grid_service.get_cells_with_spots()
+        total_spots = sum(len(c.spots) for c in cells_with_spots)
+        print(f"Found {len(cells_with_spots)} grid cells with {total_spots} spots")
 
-        # Load existing 1D histogram data
-        self.load_existing_1d_histograms()
-
-        if max_cells:
-            cells_with_spots = cells_with_spots[:max_cells]
-
-        total_stats = {
-            "cells_total": len(cells_with_spots),
-            "cells_processed": 0,
-            "cells_skipped": 0,
-            "spots_processed": 0,
-            "spots_skipped": 0,
-            "downloads_skipped": 0,
-            "bytes_freed": 0,
-        }
-
-        print(f"Processing {len(cells_with_spots)} grid cells...")
-        if self.cleanup_after_processing:
-            print("Cleanup enabled: raw data will be deleted after processing each cell")
-
-        for cell_index, cell in enumerate(tqdm(cells_with_spots)):
-            cell_stats = self.process_cell(cell_index, cell)
-
-            total_stats["cells_processed"] += 1
-            total_stats["spots_processed"] += cell_stats["spots_processed"]
-            total_stats["spots_skipped"] += cell_stats["spots_skipped"]
-            total_stats["bytes_freed"] += cell_stats["bytes_freed"]
-            if cell_stats.get("cell_skipped"):
-                total_stats["cells_skipped"] += 1
-            if cell_stats["download_skipped"]:
-                total_stats["downloads_skipped"] += 1
-
-        # Save combined 1D histograms
-        print("\nSaving combined 1D histogram data...")
-        self.save_all_1d_histograms()
-
-        print("\nPipeline complete!")
-        print(f"  Cells processed: {total_stats['cells_processed']}")
-        print(f"  Cells skipped (already done): {total_stats['cells_skipped']}")
-        print(f"  Spots processed: {total_stats['spots_processed']}")
-        print(f"  Spots skipped: {total_stats['spots_skipped']}")
-        print(f"  Downloads skipped: {total_stats['downloads_skipped']}")
-        if total_stats["bytes_freed"] > 0:
-            gb_freed = total_stats["bytes_freed"] / (1024 ** 3)
-            print(f"  Disk space freed: {gb_freed:.2f} GB")
-
-        return total_stats
+        if self.data_source == "arco":
+            # Two-phase ARCO pipeline
+            stats1 = self.run_phase1_arco(max_cells=max_cells, max_chunks=max_chunks, test_days=test_days)
+            stats2 = self.run_phase2()
+            return {**stats1, **stats2}
+        else:
+            # Legacy CDS pipeline
+            return self.run_cds(max_cells=max_cells)
 
 
 def main():
@@ -317,7 +479,13 @@ def main():
         "--max-cells",
         type=int,
         default=None,
-        help="Maximum number of grid cells to process (for testing)",
+        help="Maximum number of grid cells to process (CDS mode, for testing)",
+    )
+    parser.add_argument(
+        "--max-chunks",
+        type=int,
+        default=None,
+        help="Maximum number of time chunks to process (ARCO mode, for testing)",
     )
     parser.add_argument(
         "--force-download",
@@ -332,13 +500,24 @@ def main():
     parser.add_argument(
         "--cleanup",
         action="store_true",
-        help="Delete raw NetCDF files after processing each cell (saves ~3GB per cell)",
+        help="Delete raw NetCDF files after processing",
     )
     parser.add_argument(
         "--source",
         choices=["arco", "cds"],
         default="cds",
         help="Data source: 'cds' (Copernicus API, default) or 'arco' (Google Cloud)",
+    )
+    parser.add_argument(
+        "--phase2-only",
+        action="store_true",
+        help="Skip phase 1, only build histograms from existing time series (ARCO mode)",
+    )
+    parser.add_argument(
+        "--test-days",
+        type=int,
+        default=None,
+        help="Quick test mode: use only N days of data (e.g., --test-days 2)",
     )
 
     args = parser.parse_args()
@@ -350,7 +529,10 @@ def main():
         data_source=args.source,
     )
 
-    pipeline.run(max_cells=args.max_cells)
+    if args.phase2_only and args.source == "arco":
+        pipeline.run_phase2()
+    else:
+        pipeline.run(max_cells=args.max_cells, max_chunks=args.max_chunks, test_days=args.test_days)
 
 
 if __name__ == "__main__":

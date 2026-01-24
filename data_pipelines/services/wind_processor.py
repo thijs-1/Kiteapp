@@ -1,11 +1,12 @@
 """Service for processing wind data from ERA5 NetCDF files."""
 from pathlib import Path
-from typing import Tuple, Dict, Optional
+from typing import Tuple, Dict, Optional, List
 import numpy as np
 import xarray as xr
 
 from data_pipelines.config import MS_TO_KNOTS
 from data_pipelines.models.spot import Spot
+from data_pipelines.models.grid import BoundingBox
 
 
 class WindProcessor:
@@ -155,3 +156,82 @@ class WindProcessor:
         except Exception as e:
             print(f"Error processing {nc_paths} for spot {spot.name}: {e}")
             return None
+
+    def extract_cell_spots_data(
+        self,
+        ds: xr.Dataset,
+        spots: List[Spot],
+        bbox: BoundingBox,
+    ) -> Dict[str, np.ndarray]:
+        """
+        Extract wind data for all spots in a cell using vectorized interpolation.
+
+        This method provides significant performance improvement by:
+        1. Subsetting the dataset to the cell's bounding box first (reduces memory)
+        2. Using vectorized interpolation to extract all spots at once
+        3. Using linear interpolation instead of nearest-neighbor
+
+        Args:
+            ds: xarray Dataset with ERA5 wind data (full globe or already subset)
+            spots: List of spots to extract data for
+            bbox: Bounding box for the cell (used to subset data)
+
+        Returns:
+            Dict with keys:
+                - 'time': Array of timestamps (shape: num_times)
+                - 'strength': Array of wind strength in knots (shape: num_times x num_spots)
+                - 'direction': Array of wind direction in degrees (shape: num_times x num_spots)
+        """
+        # Subset to cell's bounding box FIRST (reduces memory)
+        # Note: latitude may be in descending order in ERA5
+        lat_min, lat_max = min(bbox.south, bbox.north), max(bbox.south, bbox.north)
+        lon_min, lon_max = min(bbox.west, bbox.east), max(bbox.west, bbox.east)
+
+        # Check latitude ordering in dataset
+        lats = ds.latitude.values
+        if lats[0] > lats[-1]:
+            # Descending order (common in ERA5)
+            cell_ds = ds.sel(
+                latitude=slice(lat_max, lat_min),
+                longitude=slice(lon_min, lon_max),
+            )
+        else:
+            # Ascending order
+            cell_ds = ds.sel(
+                latitude=slice(lat_min, lat_max),
+                longitude=slice(lon_min, lon_max),
+            )
+
+        # Build coordinate arrays for all spots
+        spot_lats = xr.DataArray([s.latitude for s in spots], dims="spot")
+        spot_lons = xr.DataArray([s.longitude for s in spots], dims="spot")
+
+        # Vectorized interpolation - all spots in cell at once
+        # This is much faster than looping through spots individually
+        u_all = cell_ds["u10"].interp(
+            latitude=spot_lats,
+            longitude=spot_lons,
+            method="linear",
+        ).compute()
+
+        v_all = cell_ds["v10"].interp(
+            latitude=spot_lats,
+            longitude=spot_lons,
+            method="linear",
+        ).compute()
+
+        # Get time values
+        time = cell_ds["valid_time"].values if "valid_time" in cell_ds else cell_ds["time"].values
+
+        # Result shapes: (time, num_spots)
+        u_values = u_all.values
+        v_values = v_all.values
+
+        strength = self.calculate_wind_strength(u_values, v_values)
+        direction = self.calculate_wind_direction(u_values, v_values)
+
+        return {
+            "time": time,
+            "strength": strength,   # shape: (num_times, num_spots)
+            "direction": direction,  # shape: (num_times, num_spots)
+        }

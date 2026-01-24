@@ -27,7 +27,7 @@ DIRECTION_BINS = list(range(-5, 360, 10))
 # Grid configuration (larger cells to reduce CDS queue requests)
 GRID_SIZE_LAT = 90  # degrees (2 cells latitude)
 GRID_SIZE_LON = 60  # degrees (6 cells longitude)
-GRID_EXPANSION_KM = 5  # km to expand each grid cell for downloads
+GRID_EXPANSION_DEGREES = 0.5  # degrees to expand each grid cell for downloads
 
 # Unit conversion
 MS_TO_KNOTS = 1.94384
@@ -36,3 +36,9 @@ MS_TO_KNOTS = 1.94384
 ERA5_YEARS = 10  # Last 10 years of data
 ERA5_DATASET = "reanalysis-era5-single-levels"
 ERA5_VARIABLES = ["10m_u_component_of_wind", "10m_v_component_of_wind"]
+
+# ARCO download chunk configuration
+ARCO_CHUNK_MONTHS = 6  # Download in 6-month chunks (balances memory vs. number of operations)
+
+# Intermediate data (per-spot time series extracted from ERA5)
+TIMESERIES_DIR = DATA_DIR / "timeseries"

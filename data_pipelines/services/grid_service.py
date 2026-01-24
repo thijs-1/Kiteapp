@@ -7,7 +7,7 @@ from data_pipelines.config import (
     ENRICHED_SPOTS_FILE,
     GRID_SIZE_LAT,
     GRID_SIZE_LON,
-    GRID_EXPANSION_KM,
+    GRID_EXPANSION_DEGREES,
 )
 from data_pipelines.models.spot import Spot
 from data_pipelines.models.grid import GridCell, BoundingBox
@@ -72,7 +72,7 @@ class GridService:
 
     def get_download_bbox(self, cell: GridCell) -> BoundingBox:
         """Get expanded bounding box for data download."""
-        return cell.get_download_bbox(GRID_EXPANSION_KM)
+        return cell.get_download_bbox(GRID_EXPANSION_DEGREES)
 
     def get_cell_summary(self) -> dict:
         """Get summary statistics about the grid."""

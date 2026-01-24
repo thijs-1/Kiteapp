@@ -3,7 +3,7 @@ from typing import Dict, Tuple
 import numpy as np
 import pandas as pd
 
-from data_pipelines.config import WIND_BINS, DIRECTION_BINS
+from data_pipelines.config import WIND_BINS, DIRECTION_BINS, DAYS_OF_YEAR
 from data_pipelines.models.histogram import DailyHistogram1D, DailyHistogram2D
 
 
@@ -18,6 +18,14 @@ class HistogramBuilder:
         """Initialize histogram builder with bin configurations."""
         self.wind_bins = wind_bins or WIND_BINS
         self.direction_bins = direction_bins or DIRECTION_BINS
+
+        # Accumulators for incremental histogram building
+        # spot_id -> {day: counts_array}
+        self._accum_1d: Dict[str, Dict[str, np.ndarray]] = {}
+        self._accum_2d: Dict[str, Dict[str, np.ndarray]] = {}
+
+        self._num_strength_bins = len(self.wind_bins) - 1
+        self._num_direction_bins = len(self.direction_bins) - 1
 
     def _get_day_of_year(self, timestamps: np.ndarray) -> np.ndarray:
         """Convert timestamps to MM-DD format strings."""
@@ -131,3 +139,99 @@ class HistogramBuilder:
             spot_id, timestamps, wind_strength, wind_direction
         )
         return hist_1d, hist_2d
+
+    # =========================================================================
+    # Incremental accumulation methods for chunk-based processing
+    # =========================================================================
+
+    def accumulate(
+        self,
+        spot_id: str,
+        timestamps: np.ndarray,
+        wind_strength: np.ndarray,
+        wind_direction: np.ndarray,
+    ) -> None:
+        """
+        Accumulate histogram counts for a spot from a chunk of data.
+
+        This method adds counts to running totals, allowing histogram building
+        from multiple time chunks without keeping all data in memory.
+
+        Args:
+            spot_id: ID of the spot
+            timestamps: Array of timestamps for this chunk
+            wind_strength: Array of wind strength values in knots
+            wind_direction: Array of wind direction values in degrees
+        """
+        day_of_year = self._get_day_of_year(timestamps)
+        unique_days = set(day_of_year)
+
+        # Initialize accumulators for this spot if needed
+        if spot_id not in self._accum_1d:
+            self._accum_1d[spot_id] = {}
+        if spot_id not in self._accum_2d:
+            self._accum_2d[spot_id] = {}
+
+        for day in unique_days:
+            mask = day_of_year == day
+            day_strength = wind_strength[mask]
+            day_direction = wind_direction[mask]
+
+            # Accumulate 1D histogram
+            counts_1d, _ = np.histogram(day_strength, bins=self.wind_bins)
+            if day in self._accum_1d[spot_id]:
+                self._accum_1d[spot_id][day] += counts_1d
+            else:
+                self._accum_1d[spot_id][day] = counts_1d.astype(np.float32)
+
+            # Accumulate 2D histogram
+            counts_2d, _, _ = np.histogram2d(
+                day_strength,
+                day_direction,
+                bins=[self.wind_bins, self.direction_bins],
+            )
+            if day in self._accum_2d[spot_id]:
+                self._accum_2d[spot_id][day] += counts_2d
+            else:
+                self._accum_2d[spot_id][day] = counts_2d.astype(np.float32)
+
+    def get_accumulated_1d(self, spot_id: str) -> DailyHistogram1D:
+        """Get the accumulated 1D histogram for a spot."""
+        if spot_id not in self._accum_1d:
+            raise ValueError(f"No accumulated data for spot {spot_id}")
+
+        return DailyHistogram1D(
+            spot_id=spot_id,
+            bins=self.wind_bins,
+            daily_counts=self._accum_1d[spot_id],
+        )
+
+    def get_accumulated_2d(self, spot_id: str) -> DailyHistogram2D:
+        """Get the accumulated 2D histogram for a spot."""
+        if spot_id not in self._accum_2d:
+            raise ValueError(f"No accumulated data for spot {spot_id}")
+
+        return DailyHistogram2D(
+            spot_id=spot_id,
+            strength_bins=self.wind_bins,
+            direction_bins=self.direction_bins,
+            daily_counts=self._accum_2d[spot_id],
+        )
+
+    def get_accumulated_spot_ids(self) -> list:
+        """Get list of spot IDs that have accumulated data."""
+        return list(self._accum_1d.keys())
+
+    def clear_accumulator(self, spot_id: str = None) -> None:
+        """
+        Clear accumulated data.
+
+        Args:
+            spot_id: If provided, clear only this spot. Otherwise clear all.
+        """
+        if spot_id:
+            self._accum_1d.pop(spot_id, None)
+            self._accum_2d.pop(spot_id, None)
+        else:
+            self._accum_1d.clear()
+            self._accum_2d.clear()

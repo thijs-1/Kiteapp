@@ -7,6 +7,8 @@ netCDF4>=1.6.5
 h5netcdf>=1.3.0
 reverse_geocoder>=1.5.1
 cdsapi>=0.7.0
+gcsfs>=2024.2.0  # For ARCO ERA5 Zarr access on Google Cloud Storage
+zarr>=2.16.0  # For xarray Zarr backend
 tqdm>=4.66.0
 attrs>=23.2.0
 

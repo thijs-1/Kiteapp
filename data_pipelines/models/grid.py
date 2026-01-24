@@ -33,6 +33,15 @@ class BoundingBox:
             west=max(-180, self.west - lon_delta),
         )
 
+    def expand_by_degrees(self, degrees: float) -> "BoundingBox":
+        """Expand the bounding box by a given number of degrees."""
+        return BoundingBox(
+            north=min(90, self.north + degrees),
+            south=max(-90, self.south - degrees),
+            east=min(180, self.east + degrees),
+            west=max(-180, self.west - degrees),
+        )
+
     def to_cds_area(self) -> List[float]:
         """Convert to CDS API area format: [north, west, south, east]."""
         return [self.north, self.west, self.south, self.east]
@@ -50,9 +59,9 @@ class GridCell:
         """Check if this grid cell contains any spots."""
         return len(self.spots) > 0
 
-    def get_download_bbox(self, expansion_km: float) -> BoundingBox:
+    def get_download_bbox(self, expansion_degrees: float) -> BoundingBox:
         """Get expanded bounding box for data download."""
-        return self.bbox.expand_by_km(expansion_km)
+        return self.bbox.expand_by_degrees(expansion_degrees)
 
 
 def cos_deg(degrees: float) -> float:
