@@ -38,7 +38,10 @@ ERA5_DATASET = "reanalysis-era5-single-levels"
 ERA5_VARIABLES = ["10m_u_component_of_wind", "10m_v_component_of_wind"]
 
 # ARCO download chunk configuration
-ARCO_CHUNK_MONTHS = 6  # Download in 6-month chunks (balances memory vs. number of operations)
+ARCO_CHUNK_MONTHS = 3  # Download in 3-month chunks (~9 GB compressed per chunk)
+
+# Checkpoint file for resumable ARCO pipeline
+CHECKPOINT_FILE = DATA_DIR / "arco_checkpoint.json"
 
 # Intermediate data (per-spot time series extracted from ERA5)
 TIMESERIES_DIR = DATA_DIR / "timeseries"

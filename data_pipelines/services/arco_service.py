@@ -54,6 +54,8 @@ class ARCOService:
         """
         Get list of (start_date, end_date) tuples for chunk-based downloads.
 
+        Uses 3-month (quarterly) chunks for ~9 GB compressed files.
+
         Args:
             test_days: If provided, return a single chunk of this many days (for testing)
 
@@ -68,10 +70,14 @@ class ARCOService:
         periods = []
 
         for year in years:
-            # First chunk: Jan 1 to Jun 30
-            periods.append((f"{year}-01-01", f"{year}-06-30"))
-            # Second chunk: Jul 1 to Dec 31
-            periods.append((f"{year}-07-01", f"{year}-12-31"))
+            # Q1: Jan 1 - Mar 31
+            periods.append((f"{year}-01-01", f"{year}-03-31"))
+            # Q2: Apr 1 - Jun 30
+            periods.append((f"{year}-04-01", f"{year}-06-30"))
+            # Q3: Jul 1 - Sep 30
+            periods.append((f"{year}-07-01", f"{year}-09-30"))
+            # Q4: Oct 1 - Dec 31
+            periods.append((f"{year}-10-01", f"{year}-12-31"))
 
         return periods
 
@@ -91,6 +97,83 @@ class ARCOService:
         end_month = end_date[5:7]
         filename = f"era5_wind_{cell_id}_{start_year}_{start_month}-{end_month}.nc"
         return self.output_dir / filename
+
+    def download_global_period(
+        self,
+        start_date: str,
+        end_date: str,
+        skip_existing: bool = True,
+    ) -> Optional[Path]:
+        """
+        Download GLOBAL ERA5 10m wind data for a time period.
+
+        Downloads the entire globe (no spatial slicing) which is efficient
+        since ARCO Zarr chunks are (1, 721, 1440) = 1 hour x full globe.
+
+        Args:
+            start_date: Start date in 'YYYY-MM-DD' format
+            end_date: End date in 'YYYY-MM-DD' format
+            skip_existing: Skip download if file already exists
+
+        Returns:
+            Path to downloaded file, or None if failed
+        """
+        output_path = self.get_chunk_path(start_date, end_date)
+
+        if skip_existing and output_path.exists():
+            print(f"  Global chunk {start_date} to {end_date} already exists")
+            return output_path
+
+        print(f"  Downloading GLOBAL {start_date} to {end_date}...")
+
+        ds = self._get_dataset()
+
+        # Check if the requested dates are within the dataset's time range
+        ds_start = str(ds.time.values[0])[:10]
+        ds_end = str(ds.time.values[-1])[:10]
+
+        actual_start = start_date
+        actual_end = end_date
+
+        if start_date < ds_start:
+            print(f"    Warning: Requested start {start_date} before dataset start {ds_start}")
+            actual_start = ds_start
+        if end_date > ds_end:
+            print(f"    Warning: Requested end {end_date} after dataset end {ds_end}")
+            actual_end = ds_end
+
+        # Select time range only - full globe (no spatial slicing)
+        subset = ds.sel(time=slice(actual_start, actual_end))[[ARCO_VAR_U10, ARCO_VAR_V10]]
+
+        # Print size info
+        time_count = len(subset.time)
+        lat_count = len(subset.latitude)
+        lon_count = len(subset.longitude)
+        estimated_gb = (time_count * lat_count * lon_count * 2 * 4) / 1024**3
+        print(f"    Size: {time_count} hours x {lat_count} lat x {lon_count} lon (~{estimated_gb:.1f} GB uncompressed)")
+
+        # Rename variables and time coordinate to match expected format
+        subset = subset.rename({
+            ARCO_VAR_U10: "u10",
+            ARCO_VAR_V10: "v10",
+            "time": "valid_time",
+        })
+
+        # Convert longitude from 0-360 to -180 to 180
+        lons = subset.longitude.values
+        if lons.max() > 180:
+            new_lons = np.where(lons > 180, lons - 360, lons)
+            subset = subset.assign_coords(longitude=new_lons)
+            subset = subset.sortby("longitude")
+
+        # Save to NetCDF - this triggers the download from GCS
+        print(f"    Downloading and saving to {output_path.name}...")
+        subset.to_netcdf(output_path)
+
+        file_size_gb = output_path.stat().st_size / 1024**3
+        print(f"    Saved: {file_size_gb:.2f} GB")
+
+        return output_path
 
     def download_cell_period(
         self,

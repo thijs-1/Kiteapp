@@ -21,6 +21,7 @@ import xarray as xr
 from tqdm import tqdm
 
 from data_pipelines.config import (
+    CHECKPOINT_FILE,
     HISTOGRAMS_1D_FILE,
     HISTOGRAMS_2D_DIR,
     RAW_DATA_DIR,
@@ -32,6 +33,7 @@ from data_pipelines.services.grid_service import GridService
 from data_pipelines.services.cds_service import CDSService
 from data_pipelines.services.arco_service import ARCOService
 from data_pipelines.services.wind_processor import WindProcessor
+from data_pipelines.services.checkpoint_service import CheckpointService
 from data_pipelines.services.histogram_builder import HistogramBuilder
 from data_pipelines.services.timeseries_store import TimeseriesStore
 from data_pipelines.utils.file_utils import save_pickle
@@ -195,61 +197,138 @@ class PipelineOrchestrator:
 
     def run_phase1_arco(self, max_cells: Optional[int] = None, max_chunks: Optional[int] = None, test_days: Optional[int] = None) -> dict:
         """
-        Phase 1: Download and extract time series (ARCO source).
+        Phase 1: Download global chunks and extract time series (ARCO source).
 
-        For each cell, downloads all time chunks, extracts time series for spots
-        in that cell, then cleans up before moving to next cell.
+        Downloads GLOBAL ERA5 data for each time period, extracts time series
+        for ALL cells from that single file, then deletes and moves to next period.
+        Uses checkpoint for resumability.
 
         Args:
             max_cells: Maximum number of cells to process (for testing)
-            max_chunks: Maximum number of time chunks per cell (for testing)
+            max_chunks: Maximum number of time chunks to process (for testing)
+            test_days: Quick test mode with N days of data
 
         Returns:
             Dict with statistics
         """
         print("\n" + "=" * 60)
-        print("PHASE 1: Extract Time Series from ARCO")
+        print("PHASE 1: Extract Time Series from ARCO (Global Mode)")
         print("=" * 60)
 
+        # Initialize checkpoint service
+        checkpoint = CheckpointService(CHECKPOINT_FILE)
+        state = checkpoint.load()
+
+        # Get cells and spots
         cells_with_spots = self.grid_service.get_cells_with_spots()
         if max_cells:
             cells_with_spots = cells_with_spots[:max_cells]
 
         total_spots = sum(len(c.spots) for c in cells_with_spots)
-        print(f"Cells to process: {len(cells_with_spots)}")
-        print(f"Total spots: {total_spots}")
+        print(f"Cells: {len(cells_with_spots)}, Total spots: {total_spots}")
 
+        # Get time periods (quarterly chunks)
         periods = self.data_service.get_chunk_periods(test_days=test_days)
         if max_chunks:
             periods = periods[:max_chunks]
-        print(f"Time chunks per cell: {len(periods)}")
+
+        print(f"Time periods: {len(periods)} (3-month chunks)")
+        print(f"Already completed: {len(state.completed_periods)} periods")
         if test_days:
             print(f"TEST MODE: {test_days} days only")
-
         if self.cleanup_after_processing:
-            print("Cleanup enabled: chunks deleted after extraction")
+            print("Cleanup enabled: global files deleted after extraction")
 
         stats = {
+            "periods_total": len(periods),
+            "periods_processed": 0,
+            "periods_skipped": len(state.completed_periods),
             "cells_total": len(cells_with_spots),
-            "cells_processed": 0,
             "spots_extracted": 0,
-            "chunks_processed": 0,
             "bytes_freed": 0,
         }
 
-        for cell_index, cell in enumerate(cells_with_spots):
-            print(f"\nCell {cell_index + 1}/{len(cells_with_spots)}: {len(cell.spots)} spots")
+        for period_idx, (start_date, end_date) in enumerate(periods):
+            period_key = f"{start_date}_{end_date}"
 
-            cell_stats = self._process_cell_arco(cell_index, cell, periods)
+            # Skip completed periods
+            if period_key in state.completed_periods:
+                continue
 
-            stats["cells_processed"] += 1
-            stats["spots_extracted"] += cell_stats["spots_processed"]
-            stats["chunks_processed"] += cell_stats["chunks_processed"]
-            stats["bytes_freed"] += cell_stats["bytes_freed"]
+            print(f"\n[{period_idx + 1}/{len(periods)}] Period: {start_date} to {end_date}")
+
+            # Download GLOBAL chunk
+            global_path = self.data_service.download_global_period(
+                start_date, end_date,
+                skip_existing=self.skip_existing_downloads,
+            )
+
+            if not global_path or not global_path.exists():
+                print(f"  ERROR: Failed to download global chunk, skipping period")
+                continue
+
+            # Start checkpoint for this period
+            checkpoint.start_period(period_key)
+
+            # Extract all cells from the global file
+            try:
+                with xr.open_dataset(global_path) as ds:
+                    for cell_idx, cell in enumerate(cells_with_spots):
+                        # Skip cells already extracted (for resume)
+                        if cell_idx in state.cells_extracted:
+                            continue
+
+                        bbox = self.grid_service.get_download_bbox(cell)
+                        print(f"    Cell {cell_idx + 1}/{len(cells_with_spots)}: {len(cell.spots)} spots")
+
+                        try:
+                            spot_data = self._extract_spots_from_dataset(ds, cell.spots, bbox)
+
+                            for spot_id, data in spot_data.items():
+                                self.timeseries_store.append_spot_data(
+                                    spot_id,
+                                    data["time"],
+                                    data["strength"],
+                                    data["direction"],
+                                )
+                                stats["spots_extracted"] += 1
+
+                            # Mark cell as extracted
+                            checkpoint.mark_cell_extracted(cell_idx)
+                            # Reload state to get updated cells_extracted
+                            state = checkpoint.load()
+
+                        except Exception as e:
+                            print(f"      Error extracting cell {cell_idx}: {e}")
+                            import traceback
+                            traceback.print_exc()
+
+            except Exception as e:
+                print(f"  ERROR opening dataset: {e}")
+                continue
+
+            # Mark period complete
+            checkpoint.complete_period()
+            state = checkpoint.load()
+            stats["periods_processed"] += 1
+
+            # Cleanup global file
+            if self.cleanup_after_processing:
+                try:
+                    import gc
+                    gc.collect()  # Release file handles on Windows
+                    size = global_path.stat().st_size
+                    global_path.unlink()
+                    stats["bytes_freed"] += size
+                    print(f"  Cleaned up: {size / 1024**3:.2f} GB freed")
+                except PermissionError:
+                    print(f"  Warning: Could not delete {global_path.name} (file locked)")
+                except Exception as e:
+                    print(f"  Warning: Cleanup error: {e}")
 
         print(f"\nPhase 1 complete!")
-        print(f"  Cells processed: {stats['cells_processed']}")
-        print(f"  Chunks processed: {stats['chunks_processed']}")
+        print(f"  Periods processed: {stats['periods_processed']}")
+        print(f"  Periods skipped (already done): {stats['periods_skipped']}")
         print(f"  Time series size: {self.timeseries_store.get_total_size_mb():.1f} MB")
         if stats["bytes_freed"] > 0:
             print(f"  Disk freed: {stats['bytes_freed'] / 1024**3:.1f} GB")
@@ -519,8 +598,18 @@ def main():
         default=None,
         help="Quick test mode: use only N days of data (e.g., --test-days 2)",
     )
+    parser.add_argument(
+        "--clear-checkpoint",
+        action="store_true",
+        help="Clear checkpoint file and start fresh (ARCO mode)",
+    )
 
     args = parser.parse_args()
+
+    # Clear checkpoint if requested
+    if args.clear_checkpoint and args.source == "arco":
+        checkpoint = CheckpointService(CHECKPOINT_FILE)
+        checkpoint.clear()
 
     pipeline = PipelineOrchestrator(
         skip_existing_downloads=not args.force_download,
