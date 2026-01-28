@@ -8,7 +8,7 @@ from backend.api.dependencies import get_windrose_service
 router = APIRouter(prefix="/spots/{spot_id}/windrose", tags=["windrose"])
 
 
-@router.get("/", response_model=WindRoseResponse)
+@router.get("", response_model=WindRoseResponse)
 async def get_windrose(
     spot_id: str,
     start_date: str = Query("01-01", pattern=r"^\d{2}-\d{2}$"),
