@@ -9,6 +9,7 @@ from backend.api.routes import spots, histograms, windrose
 app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
+    redirect_slashes=False,
 )
 
 # Add CORS middleware

@@ -9,7 +9,7 @@ from backend.api.dependencies import get_spot_service
 router = APIRouter(prefix="/spots", tags=["spots"])
 
 
-@router.get("/", response_model=List[SpotWithStats])
+@router.get("", response_model=List[SpotWithStats])
 async def get_filtered_spots(
     wind_min: float = Query(0, ge=0, description="Minimum wind speed in knots"),
     wind_max: float = Query(100, description="Maximum wind speed (100 = infinity)"),
