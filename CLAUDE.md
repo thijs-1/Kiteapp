@@ -11,7 +11,7 @@ Kiteapp is a kitesurfing spot finder that uses 10 years of ERA5 wind data from C
 ### Backend
 ```bash
 .\venv\Scripts\activate                              # Activate venv (Windows)
-.\venv\Scripts\uvicorn backend.main:app --reload     # Start backend (port 8000)
+.\venv\Scripts\uvicorn backend.main:app --reload     # Start backend (port 8001)
 pytest tests/                                        # Run all tests
 pytest tests/backend/                                # Backend tests only
 ```

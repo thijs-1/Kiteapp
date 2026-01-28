@@ -91,9 +91,9 @@ Download and process wind data from CDS:
 .\venv\Scripts\uvicorn backend.main:app --reload
 ```
 
-The API will be available at http://localhost:8000
+The API will be available at http://localhost:8001
 
-API Documentation: http://localhost:8000/docs
+API Documentation: http://localhost:8001/docs
 
 ### 4. Start Frontend
 
@@ -199,7 +199,7 @@ Check:
 
 ### Frontend Can't Connect to Backend
 
-Ensure the backend is running on port 8000. The frontend dev server proxies `/api` requests to `localhost:8000`.
+Ensure the backend is running on port 8001. The frontend dev server proxies `/api` requests to `localhost:8001`.
 
 ### Missing Histogram Data
 

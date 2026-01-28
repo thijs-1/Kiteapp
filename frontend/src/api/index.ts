@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Use Vite proxy in development, direct URL in production
 const baseURL = import.meta.env.PROD
-  ? import.meta.env.VITE_API_URL || 'http://localhost:8000'
+  ? import.meta.env.VITE_API_URL || 'http://localhost:8001'
   : '/api';
 
 export const api = axios.create({

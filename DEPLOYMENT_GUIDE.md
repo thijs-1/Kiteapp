@@ -78,9 +78,8 @@ sudo useradd -m -s /bin/bash kiteapp
 # Switch to application user
 sudo su - kiteapp
 
-# Create application directory in home
-mkdir -p ~/kiteapp
-cd ~/kiteapp
+# Use home directory as application directory
+cd ~
 ```
 
 ---
@@ -90,7 +89,7 @@ cd ~/kiteapp
 ### 1. Clone Repository
 
 ```bash
-# As kiteapp user in ~/kiteapp
+# As kiteapp user in home directory
 git clone https://github.com/thijs-1/kiteapp.git .
 
 # Or upload via SCP/SFTP if using private repository
@@ -112,7 +111,7 @@ pip install --upgrade pip
 pip install -r requirements.txt
 
 # Test backend (optional)
-python -m backend.main  # Should start on port 8000
+python -m backend.main  # Should start on port 8001
 # Press Ctrl+C to stop
 ```
 
@@ -143,7 +142,7 @@ cors_origins: list = ["https://yourdomain.com"]  # Update this
 
 ```bash
 # Navigate to frontend directory
-cd ~/kiteapp/frontend
+cd ~/frontend
 
 # Install dependencies
 npm install
@@ -160,7 +159,7 @@ Ensure processed data files are present:
 
 ```bash
 # Verify data directory structure
-ls -la ~/kiteapp/data/processed/
+ls -la ~/data/processed/
 
 # Expected files:
 # - spots.pkl
@@ -222,7 +221,7 @@ server {
     add_header X-XSS-Protection "1; mode=block" always;
 
     # Root directory for static files
-    root /home/kiteapp/kiteapp/frontend/dist;
+    root /home/kiteapp/frontend/dist;
     index index.html;
 
     # Gzip compression
@@ -234,7 +233,7 @@ server {
     # API proxy to FastAPI backend
     location /api/ {
         rewrite ^/api/(.*) /$1 break;
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8001;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -315,14 +314,14 @@ After=network.target
 Type=simple
 User=kiteapp
 Group=kiteapp
-WorkingDirectory=/home/kiteapp/kiteapp
-Environment="PATH=/home/kiteapp/kiteapp/venv/bin"
+WorkingDirectory=/home/kiteapp
+Environment="PATH=/home/kiteapp/venv/bin"
 
 # Using Uvicorn (simple and efficient for homelab)
-ExecStart=/home/kiteapp/kiteapp/venv/bin/uvicorn \
+ExecStart=/home/kiteapp/venv/bin/uvicorn \
     backend.main:app \
     --host 127.0.0.1 \
-    --port 8000 \
+    --port 8001 \
     --log-level info
 
 # Restart policy
@@ -475,7 +474,7 @@ screen -r mysession
 
 ```bash
 # Activate virtual environment
-cd ~/kiteapp
+cd ~
 source venv/bin/activate
 
 # Test with one grid cell first
@@ -499,7 +498,7 @@ crontab -e
 Add this line (runs January 1st at 2 AM each year):
 
 ```cron
-0 2 1 1 * cd ~/kiteapp && ~/kiteapp/venv/bin/python -m data_pipelines.main --cleanup >> ~/kiteapp/logs/pipeline.log 2>&1
+0 2 1 1 * cd ~ && ~/venv/bin/python -m data_pipelines.main --cleanup >> ~/logs/pipeline.log 2>&1
 ```
 
 **Note:** ERA5 historical data changes infrequently. You may prefer to run the pipeline manually when needed rather than scheduling it.
@@ -521,10 +520,10 @@ sudo journalctl -u kiteapp -n 50 --no-pager
 sudo tail -f /var/log/kiteapp/error.log
 
 # Common issues:
-# - Port 8000 already in use: sudo lsof -i :8000
-# - Missing data files: ls -la ~/kiteapp/data/processed/
-# - Wrong Python version: ~/kiteapp/venv/bin/python --version
-# - Missing dependencies: cd ~/kiteapp && source venv/bin/activate && pip install -r requirements.txt
+# - Port 8001 already in use: sudo lsof -i :8001
+# - Missing data files: ls -la ~/data/processed/
+# - Wrong Python version: ~/venv/bin/python --version
+# - Missing dependencies: cd ~ && source venv/bin/activate && pip install -r requirements.txt
 ```
 
 **502 Bad Gateway:**
@@ -534,8 +533,8 @@ sudo tail -f /var/log/kiteapp/error.log
 sudo systemctl status kiteapp
 
 # Verify port configuration matches
-# Backend should be on 127.0.0.1:8000
-# Nginx should proxy to http://127.0.0.1:8000
+# Backend should be on 127.0.0.1:8001
+# Nginx should proxy to http://127.0.0.1:8001
 
 # Check nginx config
 sudo nginx -t
@@ -548,14 +547,14 @@ grep -r "proxy_pass" /etc/nginx/sites-enabled/kiteapp
 
 ```bash
 # Verify build files exist
-ls -la ~/kiteapp/frontend/dist/
-ls -la ~/kiteapp/frontend/dist/index.html
+ls -la ~/frontend/dist/
+ls -la ~/frontend/dist/index.html
 
 # Check nginx root path is correct
 sudo nginx -T | grep -A 5 "server_name yourdomain.com"
 
 # Rebuild frontend if needed
-cd ~/kiteapp/frontend
+cd ~/frontend
 npm run build
 
 # Check browser console (F12) for JavaScript errors
@@ -622,11 +621,11 @@ sudo systemctl reload nginx
 
 ```bash
 # Fix application directory ownership (should already be correct)
-sudo chown -R kiteapp:kiteapp /home/kiteapp/kiteapp
+sudo chown -R kiteapp:kiteapp /home/kiteapp
 
 # Fix permissions if needed
-chmod -R 755 ~/kiteapp
-chmod 644 ~/kiteapp/data/processed/*.pkl
+chmod -R 755 ~
+chmod 644 ~/data/processed/*.pkl
 
 # Fix service file permissions
 sudo chmod 644 /etc/systemd/system/kiteapp.service
@@ -657,7 +656,7 @@ sudo tail -f /var/log/kiteapp/access.log
 sudo tail -f /var/log/nginx/access.log
 
 # Verify data files are accessible and not corrupted
-cd ~/kiteapp
+cd ~
 source venv/bin/activate
 python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'rb')); print(f'Loaded {len(data)} spots')"
 ```
@@ -670,7 +669,7 @@ python -c "import pickle; data = pickle.load(open('data/processed/spots.pkl', 'r
 
 ```bash
 # As kiteapp user
-cd ~/kiteapp
+cd ~
 git pull origin main
 
 # Update backend dependencies
@@ -722,7 +721,7 @@ sudo apt update
 sudo apt upgrade -y
 
 # Update Python packages
-cd ~/kiteapp
+cd ~
 source venv/bin/activate
 pip list --outdated
 pip install -r requirements.txt --upgrade
@@ -741,10 +740,10 @@ npm update
 
 | Path | Description |
 |------|-------------|
-| `/home/kiteapp/kiteapp` | Application root |
-| `/home/kiteapp/kiteapp/venv` | Python virtual environment |
-| `/home/kiteapp/kiteapp/frontend/dist` | Built frontend files |
-| `/home/kiteapp/kiteapp/data/processed` | Data files |
+| `/home/kiteapp` | Application root |
+| `/home/kiteapp/venv` | Python virtual environment |
+| `/home/kiteapp/frontend/dist` | Built frontend files |
+| `/home/kiteapp/data/processed` | Data files |
 | `/home/kiteapp/.env` | Environment configuration |
 | `/etc/nginx/sites-available/kiteapp` | Nginx configuration |
 | `/etc/systemd/system/kiteapp.service` | Systemd service file |
@@ -767,10 +766,10 @@ sudo tail -f /var/log/kiteapp/error.log
 sudo tail -f /var/log/nginx/error.log
 
 # Rebuild frontend
-cd ~/kiteapp/frontend && npm run build
+cd ~/frontend && npm run build
 
 # Activate Python environment
-cd ~/kiteapp && source venv/bin/activate
+cd ~ && source venv/bin/activate
 ```
 
 ### Post-Deployment Verification
@@ -778,14 +777,14 @@ cd ~/kiteapp && source venv/bin/activate
 After deployment, verify everything works:
 
 - [ ] Backend service is running: `sudo systemctl status kiteapp`
-- [ ] Backend responds: `curl http://127.0.0.1:8000/docs` (should show FastAPI docs)
+- [ ] Backend responds: `curl http://127.0.0.1:8001/docs` (should show FastAPI docs)
 - [ ] Nginx is running: `sudo systemctl status nginx`
 - [ ] Nginx configuration is valid: `sudo nginx -t`
 - [ ] Domain resolves to server: `ping yourdomain.com`
 - [ ] Frontend loads in browser: `https://yourdomain.com`
 - [ ] API calls work from frontend (check browser console)
 - [ ] SSL certificate is valid (green padlock in browser)
-- [ ] Data files exist: `ls -la ~/kiteapp/data/processed/`
+- [ ] Data files exist: `ls -la ~/data/processed/`
 
 ---
 
