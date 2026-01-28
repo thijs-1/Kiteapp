@@ -181,44 +181,17 @@ If data files are missing, either:
 sudo nano /etc/nginx/sites-available/kiteapp
 ```
 
-### 2. Basic Configuration
+### 2. HTTP Configuration (Certbot will add SSL later)
+
+Start with an HTTP-only config. Certbot will automatically add SSL settings when you run it.
 
 ```nginx
 # /etc/nginx/sites-available/kiteapp
 
-# Redirect HTTP to HTTPS
 server {
     listen 80;
     listen [::]:80;
     server_name yourdomain.com www.yourdomain.com;
-
-    # Let's Encrypt challenge location
-    location /.well-known/acme-challenge/ {
-        root /var/www/certbot;
-    }
-
-    location / {
-        return 301 https://$server_name$request_uri;
-    }
-}
-
-# HTTPS Server Block
-server {
-    listen 443 ssl http2;
-    listen [::]:443 ssl http2;
-    server_name yourdomain.com www.yourdomain.com;
-
-    # SSL Configuration (update paths after obtaining certificates)
-    ssl_certificate /etc/letsencrypt/live/yourdomain.com/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/yourdomain.com/privkey.pem;
-    ssl_protocols TLSv1.2 TLSv1.3;
-    ssl_ciphers HIGH:!aNULL:!MD5;
-    ssl_prefer_server_ciphers on;
-
-    # Security headers
-    add_header X-Frame-Options "SAMEORIGIN" always;
-    add_header X-Content-Type-Options "nosniff" always;
-    add_header X-XSS-Protection "1; mode=block" always;
 
     # Root directory for static files
     root /home/kiteapp/frontend/dist;
@@ -253,7 +226,7 @@ server {
         try_files $uri $uri/ /index.html;
     }
 
-    # Additional security - deny access to hidden files
+    # Security - deny access to hidden files
     location ~ /\. {
         deny all;
         access_log off;
@@ -262,7 +235,7 @@ server {
 }
 ```
 
-**Important:** Replace `yourdomain.com` with your actual domain name throughout the configuration.
+**Important:** Replace `yourdomain.com` with your actual domain name.
 
 ### 3. Enable Site Configuration
 
@@ -391,43 +364,35 @@ sudo tail -f /var/log/kiteapp/error.log
 
 ## SSL/TLS Configuration
 
-### Using Let's Encrypt (Free, Recommended)
+### Using Let's Encrypt with Certbot
+
+Certbot will automatically modify your nginx config to add SSL support and HTTP→HTTPS redirects.
 
 ```bash
 # Install Certbot
 sudo apt install -y certbot python3-certbot-nginx
 
-# Obtain certificate (nginx plugin - easiest method)
+# Obtain certificate and configure nginx
 sudo certbot --nginx -d yourdomain.com -d www.yourdomain.com
+```
 
-# Certbot will automatically:
-# - Obtain the certificate
-# - Update nginx configuration
-# - Set up auto-renewal
+Certbot will:
+- Obtain the SSL certificate
+- Add SSL configuration to your nginx server block
+- Ask if you want to redirect HTTP to HTTPS (select yes)
+- Set up automatic certificate renewal
 
+After completion, verify everything works:
+
+```bash
 # Verify auto-renewal is enabled
 sudo systemctl status certbot.timer
 
 # Test renewal process
 sudo certbot renew --dry-run
-```
 
-**Alternative: Manual certificate with webroot**
-
-```bash
-# Create webroot directory
-sudo mkdir -p /var/www/certbot
-
-# Obtain certificate
-sudo certbot certonly --webroot -w /var/www/certbot \
-    -d yourdomain.com -d www.yourdomain.com
-
-# Certificates will be placed in:
-# /etc/letsencrypt/live/yourdomain.com/fullchain.pem
-# /etc/letsencrypt/live/yourdomain.com/privkey.pem
-
-# Reload nginx after certificate is obtained
-sudo systemctl reload nginx
+# Check nginx config was updated
+sudo nginx -t
 ```
 
 ---
