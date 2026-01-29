@@ -1,6 +1,7 @@
 # Data Pipelines
 numpy>=1.26.0
 pandas>=2.2.0
+astral>=3.2  # For sunrise/sunset calculations
 xarray>=2024.1.0
 dask>=2024.1.0
 netCDF4>=1.6.5

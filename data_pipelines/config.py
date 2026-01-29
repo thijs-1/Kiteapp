@@ -45,3 +45,14 @@ CHECKPOINT_FILE = DATA_DIR / "arco_checkpoint.json"
 
 # Intermediate data (per-spot time series extracted from ERA5)
 TIMESERIES_DIR = DATA_DIR / "timeseries"
+
+# Daylight filtering configuration
+# When enabled, only wind data during daylight hours is included in histograms
+FILTER_DAYLIGHT_HOURS = True
+
+# Sun depression angle for twilight definition (degrees below horizon)
+# 0 = geometric sunrise/sunset (sun center at horizon)
+# 6 = civil twilight (recommended for kitesurfing - enough light for activities)
+# 12 = nautical twilight
+# 18 = astronomical twilight
+DAYLIGHT_DEPRESSION_ANGLE = 6.0
