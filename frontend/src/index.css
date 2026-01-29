@@ -39,3 +39,12 @@
   height: 100%;
   width: 100%;
 }
+
+/* Mobile spot popup - limit width to 2/3 of screen */
+.mobile-spot-popup .leaflet-popup-content-wrapper {
+  max-width: 66vw;
+}
+
+.mobile-spot-popup .leaflet-popup-content {
+  margin: 8px 12px;
+}
