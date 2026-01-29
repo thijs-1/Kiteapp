@@ -629,7 +629,7 @@ def main():
     parser.add_argument(
         "--phase2-only",
         action="store_true",
-        help="Skip phase 1, only build histograms from existing time series (ARCO mode)",
+        help="Skip phase 1, only build histograms from existing time series",
     )
     parser.add_argument(
         "--test-days",
@@ -667,7 +667,7 @@ def main():
         data_source=args.source,
     )
 
-    if args.phase2_only and args.source == "arco":
+    if args.phase2_only:
         pipeline.run_phase2()
     else:
         pipeline.run(max_cells=args.max_cells, max_chunks=args.max_chunks, test_days=args.test_days)
