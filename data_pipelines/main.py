@@ -22,6 +22,7 @@ from tqdm import tqdm
 
 from data_pipelines.config import (
     CHECKPOINT_FILE,
+    FILTER_DAYLIGHT_HOURS,
     HISTOGRAMS_1D_FILE,
     HISTOGRAMS_2D_DIR,
     RAW_DATA_DIR,
@@ -83,6 +84,23 @@ class PipelineOrchestrator:
         self._histogram_1d_data: Dict[str, np.ndarray] = {}
         self._day_to_idx = {day: idx for idx, day in enumerate(DAYS_OF_YEAR)}
         self._num_bins = len(WIND_BINS) - 1
+
+        # Spot coordinate lookup for daylight filtering
+        # Built lazily on first access
+        self._spot_coords: Optional[Dict[str, tuple]] = None
+
+    def _get_spot_coords(self) -> Dict[str, tuple]:
+        """
+        Get spot coordinate lookup (spot_id -> (latitude, longitude)).
+
+        Built lazily and cached for reuse.
+        """
+        if self._spot_coords is None:
+            self._spot_coords = {}
+            for spot in self.grid_service.spots:
+                self._spot_coords[spot.spot_id] = (spot.latitude, spot.longitude)
+            print(f"Built spot coordinate lookup: {len(self._spot_coords)} spots")
+        return self._spot_coords
 
     # =========================================================================
     # Phase 1: Extract Time Series (cell-based, time-chunked)
@@ -405,6 +423,14 @@ class PipelineOrchestrator:
         spot_ids = self.timeseries_store.get_all_spot_ids()
         print(f"Found {len(spot_ids)} spots with time series data")
 
+        # Get spot coordinates for daylight filtering
+        if FILTER_DAYLIGHT_HOURS:
+            spot_coords = self._get_spot_coords()
+            print("Daylight filtering enabled: only including daytime hours in histograms")
+        else:
+            spot_coords = {}
+            print("Daylight filtering disabled: including all hours")
+
         stats = {
             "spots_total": len(spot_ids),
             "spots_processed": 0,
@@ -425,12 +451,17 @@ class PipelineOrchestrator:
             if data is None:
                 continue
 
-            # Build histograms
+            # Get spot coordinates for daylight filtering
+            latitude, longitude = spot_coords.get(spot_id, (None, None))
+
+            # Build histograms (with daylight filtering if coordinates available)
             hist_1d, hist_2d = self.histogram_builder.build_histograms(
                 spot_id,
                 data["time"],
                 data["strength"],
                 data["direction"],
+                latitude=latitude,
+                longitude=longitude,
             )
 
             # Save
@@ -465,6 +496,11 @@ class PipelineOrchestrator:
         if max_cells:
             cells_with_spots = cells_with_spots[:max_cells]
 
+        if FILTER_DAYLIGHT_HOURS:
+            print("Daylight filtering enabled: only including daytime hours in histograms")
+        else:
+            print("Daylight filtering disabled: including all hours")
+
         stats = {
             "cells_processed": 0,
             "spots_processed": 0,
@@ -494,11 +530,14 @@ class PipelineOrchestrator:
                 if wind_data is None:
                     continue
 
+                # Pass spot coordinates for daylight filtering
                 hist_1d, hist_2d = self.histogram_builder.build_histograms(
                     spot.spot_id,
                     wind_data["time"],
                     wind_data["strength"],
                     wind_data["direction"],
+                    latitude=spot.latitude,
+                    longitude=spot.longitude,
                 )
 
                 if not has_1d:
@@ -603,8 +642,18 @@ def main():
         action="store_true",
         help="Clear checkpoint file and start fresh (ARCO mode)",
     )
+    parser.add_argument(
+        "--no-daylight-filter",
+        action="store_true",
+        help="Disable daylight filtering (include all 24 hours in histograms)",
+    )
 
     args = parser.parse_args()
+
+    # Override daylight filtering config if flag is set
+    if args.no_daylight_filter:
+        import data_pipelines.config as config
+        config.FILTER_DAYLIGHT_HOURS = False
 
     # Clear checkpoint if requested
     if args.clear_checkpoint and args.source == "arco":
