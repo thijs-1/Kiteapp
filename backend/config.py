@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     default_min_percentage: float = 75.0
     default_start_date: str = "01-01"
     default_end_date: str = "12-31"
-    default_moving_avg_weeks: int = 2
+    default_moving_avg_weeks: int = 1
 
     class Config:
         env_prefix = "KITEAPP_"
