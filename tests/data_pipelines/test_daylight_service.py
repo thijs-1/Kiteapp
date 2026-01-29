@@ -306,6 +306,32 @@ class TestDaylightServiceEdgeCases:
         assert madrid_jun > ba_jun, \
             f"In Jun: expected Madrid ({madrid_jun}h) > Buenos Aires ({ba_jun}h)"
 
+    def test_new_zealand_daylight_shifted_from_utc(self):
+        """Test that NZ daylight hours are shifted - late UTC hours are daytime in NZ."""
+        service = DaylightService(filter_enabled=True, depression_angle=0)
+
+        # Wellington, New Zealand (UTC+12 in winter, UTC+13 in summer)
+        latitude = -41.29
+        longitude = 174.78
+
+        # Test a time that is night in Europe but should be daytime in NZ
+        # 23:30 UTC = 11:30 or 12:30 local NZ time (midday!)
+        late_utc_timestamp = np.array([np.datetime64("2024-06-21T23:30:00")])
+
+        mask = service.create_daylight_mask(latitude, longitude, late_utc_timestamp)
+
+        # 23:30 UTC should be daytime in NZ (it's around noon local time)
+        assert mask[0] == True, "23:30 UTC should be daytime in New Zealand (local ~11:30-12:30)"
+
+        # Also test that early UTC hours (morning in Europe) are night in NZ
+        # 10:00 UTC = 22:00 or 23:00 local NZ time (night)
+        early_utc_timestamp = np.array([np.datetime64("2024-06-21T10:00:00")])
+
+        mask_early = service.create_daylight_mask(latitude, longitude, early_utc_timestamp)
+
+        # 10:00 UTC should be nighttime in NZ (it's around 22:00-23:00 local time)
+        assert mask_early[0] == False, "10:00 UTC should be nighttime in New Zealand (local ~22:00-23:00)"
+
     def test_longitude_affects_utc_times(self):
         """Test that different longitudes produce different UTC times."""
         service = DaylightService(filter_enabled=True, depression_angle=0)
