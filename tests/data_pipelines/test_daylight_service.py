@@ -242,6 +242,70 @@ class TestDaylightServiceEdgeCases:
         daylight_hours = (sunset - sunrise).total_seconds() / 3600
         assert daylight_hours > 13
 
+    def test_buenos_aires_summer_vs_winter(self):
+        """Test southern hemisphere seasonal daylight in Buenos Aires (closer to UTC)."""
+        service = DaylightService(filter_enabled=True, depression_angle=0)
+
+        # Buenos Aires, Argentina (-34.6°S, -58.4°W) - UTC-3, manageable offset
+        latitude = -34.60
+        longitude = -58.38
+
+        # Summer timestamps (December - southern summer)
+        summer_ts = np.array([
+            np.datetime64(f"2024-12-21T{h:02d}:00:00") for h in range(24)
+        ])
+
+        # Winter timestamps (June - southern winter)
+        winter_ts = np.array([
+            np.datetime64(f"2024-06-21T{h:02d}:00:00") for h in range(24)
+        ])
+
+        summer_mask = service.create_daylight_mask(latitude, longitude, summer_ts)
+        winter_mask = service.create_daylight_mask(latitude, longitude, winter_ts)
+
+        summer_daylight = summer_mask.sum()
+        winter_daylight = winter_mask.sum()
+
+        # Southern summer (Dec) should have more daylight than winter (Jun)
+        assert summer_daylight > winter_daylight, \
+            f"Expected Buenos Aires summer ({summer_daylight}h) > winter ({winter_daylight}h)"
+
+        # Reasonable values for this latitude
+        assert summer_daylight > 12, f"Expected >12h in summer, got {summer_daylight}"
+        assert winter_daylight < 12, f"Expected <12h in winter, got {winter_daylight}"
+
+    def test_southern_vs_northern_hemisphere_opposite_seasons(self):
+        """Test that southern and northern hemispheres have opposite seasons."""
+        service = DaylightService(filter_enabled=True, depression_angle=0)
+
+        # Buenos Aires (southern hemisphere, UTC-3)
+        ba_lat, ba_lon = -34.60, -58.38
+        # Madrid, Spain (northern hemisphere, UTC+1)
+        madrid_lat, madrid_lon = 40.42, -3.70
+
+        dec_timestamps = np.array([
+            np.datetime64(f"2024-12-21T{h:02d}:00:00") for h in range(24)
+        ])
+        jun_timestamps = np.array([
+            np.datetime64(f"2024-06-21T{h:02d}:00:00") for h in range(24)
+        ])
+
+        # December: Buenos Aires summer, Madrid winter
+        ba_dec = service.create_daylight_mask(ba_lat, ba_lon, dec_timestamps).sum()
+        madrid_dec = service.create_daylight_mask(madrid_lat, madrid_lon, dec_timestamps).sum()
+
+        # June: Buenos Aires winter, Madrid summer
+        ba_jun = service.create_daylight_mask(ba_lat, ba_lon, jun_timestamps).sum()
+        madrid_jun = service.create_daylight_mask(madrid_lat, madrid_lon, jun_timestamps).sum()
+
+        # In December, Buenos Aires should have more daylight than Madrid
+        assert ba_dec > madrid_dec, \
+            f"In Dec: expected Buenos Aires ({ba_dec}h) > Madrid ({madrid_dec}h)"
+
+        # In June, Madrid should have more daylight than Buenos Aires
+        assert madrid_jun > ba_jun, \
+            f"In Jun: expected Madrid ({madrid_jun}h) > Buenos Aires ({ba_jun}h)"
+
     def test_longitude_affects_utc_times(self):
         """Test that different longitudes produce different UTC times."""
         service = DaylightService(filter_enabled=True, depression_angle=0)
