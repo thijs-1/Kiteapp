@@ -1,15 +1,34 @@
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { FilterPanel } from './FilterPanel';
+import { MenuCallout, markMenuAsSeen } from './MenuCallout';
 
 export function HamburgerMenu() {
   const [isOpen, setIsOpen] = useState(false);
+  const [showCallout, setShowCallout] = useState(true);
+
+  const handleMenuClick = useCallback(() => {
+    setIsOpen((prev) => !prev);
+    // Mark menu as seen and hide callout when user clicks
+    if (showCallout) {
+      markMenuAsSeen();
+      setShowCallout(false);
+    }
+  }, [showCallout]);
+
+  const handleCalloutDismiss = useCallback(() => {
+    markMenuAsSeen();
+    setShowCallout(false);
+  }, []);
 
   return (
     <>
+      {/* Callout for first-time users */}
+      {showCallout && <MenuCallout onDismiss={handleCalloutDismiss} />}
+
       {/* Hamburger button */}
       <button
         className="fixed top-4 left-4 z-[1000] p-3 bg-white rounded-lg shadow-lg hover:bg-gray-100 transition-colors"
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={handleMenuClick}
         aria-label="Toggle menu"
       >
         <svg
