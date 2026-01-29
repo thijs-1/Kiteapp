@@ -182,30 +182,29 @@ class SpotService:
             # Apply name filter on top of country filter
             df = df[df["name"].str.lower().str.contains(name.lower(), na=False)]
 
-        results = []
+        # Add percentages as column using vectorized map
+        df = df.copy()
+        df["kiteable_percentage"] = df["spot_id"].map(all_percentages)
 
-        for _, row in df.iterrows():
-            spot_id = row["spot_id"]
-            percentage = all_percentages.get(spot_id)
+        # Filter and sort using vectorized operations
+        df = df[df["kiteable_percentage"] >= min_percentage]
+        df = df.sort_values("kiteable_percentage", ascending=False)
 
-            if percentage is None or percentage < min_percentage:
-                continue
+        # Round percentages
+        df["kiteable_percentage"] = df["kiteable_percentage"].round(1)
 
-            results.append(
-                SpotWithStats(
-                    spot_id=spot_id,
-                    name=row["name"],
-                    latitude=row["latitude"],
-                    longitude=row["longitude"],
-                    country=row["country"],
-                    kiteable_percentage=round(percentage, 1),
-                )
+        # Convert to list of Pydantic models using itertuples (faster than iterrows)
+        return [
+            SpotWithStats(
+                spot_id=row.spot_id,
+                name=row.name,
+                latitude=row.latitude,
+                longitude=row.longitude,
+                country=row.country,
+                kiteable_percentage=row.kiteable_percentage,
             )
-
-        # Sort by kiteable percentage descending
-        results.sort(key=lambda x: x.kiteable_percentage, reverse=True)
-
-        return results
+            for row in df.itertuples(index=False)
+        ]
 
     def get_countries(self) -> List[str]:
         """Get list of all countries."""
