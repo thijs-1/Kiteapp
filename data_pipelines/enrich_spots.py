@@ -8,8 +8,21 @@ This is a one-time preprocessing step that:
 4. Saves enriched data to data/processed/spots.pkl
 """
 import pandas as pd
+import pycountry
 import reverse_geocoder as rg
 from tqdm import tqdm
+
+
+def country_code_to_name(code: str) -> str:
+    """Convert ISO 3166-1 alpha-2 country code to full country name."""
+    try:
+        country = pycountry.countries.get(alpha_2=code)
+        if country:
+            return country.name
+    except (KeyError, LookupError):
+        pass
+    # Return the code if no match found
+    return code
 
 from data_pipelines.config import INPUT_SPOTS_FILE, ENRICHED_SPOTS_FILE, PROCESSED_DATA_DIR
 from data_pipelines.utils.file_utils import load_spots_dataframe, save_spots_dataframe
@@ -36,8 +49,8 @@ def enrich_spots() -> pd.DataFrame:
     # reverse_geocoder does batch lookup efficiently
     results = rg.search(coordinates)
 
-    # Extract country codes
-    df["country"] = [r["cc"] for r in results]
+    # Extract country codes and convert to full names
+    df["country"] = [country_code_to_name(r["cc"]) for r in results]
 
     # Rename columns for consistency
     df = df.rename(columns={"spotname": "name", "lat": "latitude", "long": "longitude"})
