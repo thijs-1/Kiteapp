@@ -50,6 +50,17 @@ class HistogramBuilder:
         dates = pd.to_datetime(timestamps)
         return np.array([d.strftime("%m-%d") for d in dates])
 
+    def _normalize_direction(self, wind_direction: np.ndarray) -> np.ndarray:
+        """
+        Normalize wind direction to fit histogram bins.
+
+        Direction bins are [-5, 5, 15, ..., 345, 355], so values in [355, 360)
+        need to be shifted to [-5, 0) to be captured by the first bin.
+        """
+        normalized = wind_direction.copy()
+        normalized[normalized >= 355] -= 360
+        return normalized
+
     def _apply_daylight_filter(
         self,
         timestamps: np.ndarray,
@@ -151,6 +162,9 @@ class HistogramBuilder:
         timestamps, wind_strength, wind_direction = self._apply_daylight_filter(
             timestamps, wind_strength, wind_direction, latitude, longitude
         )
+
+        # Normalize direction to fit bins (355-360 -> -5 to 0)
+        wind_direction = self._normalize_direction(wind_direction)
 
         day_of_year = self._get_day_of_year(timestamps)
         unique_days = sorted(set(day_of_year))
@@ -270,6 +284,9 @@ class HistogramBuilder:
         # Skip if no data remains after filtering
         if len(timestamps) == 0:
             return
+
+        # Normalize direction to fit bins (355-360 -> -5 to 0)
+        wind_direction = self._normalize_direction(wind_direction)
 
         day_of_year = self._get_day_of_year(timestamps)
         unique_days = set(day_of_year)

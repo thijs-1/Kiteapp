@@ -1,3 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
-  <text y=".9em" font-size="90">🪁</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <g transform="rotate(-45, 32, 32)">
+    <!-- Kite - fuller crescent shape with scalloped trailing edge -->
+    <path d="M4 32 Q4 8 32 8 Q60 8 60 32
+             Q52 34 44 32
+             Q38 40 32 38
+             Q26 40 20 32
+             Q12 34 4 32 Z" fill="#1a1a1a"/>
+    <!-- Struts (white lines from leading edge to trailing edge) -->
+    <line x1="18" y1="12" x2="20" y2="32" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="32" y1="8" x2="32" y2="38" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <line x1="46" y1="12" x2="44" y2="32" stroke="white" stroke-width="2.5" stroke-linecap="round"/>
+    <!-- Lines from crescent corners -->
+    <line x1="4" y1="32" x2="32" y2="62" stroke="#1a1a1a" stroke-width="1.5"/>
+    <line x1="60" y1="32" x2="32" y2="62" stroke="#1a1a1a" stroke-width="1.5"/>
+  </g>
 </svg>

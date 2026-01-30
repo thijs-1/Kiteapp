@@ -19,7 +19,7 @@ data/processed/histograms_1d/
 data/processed/histograms_2d/
 *.nc
 *.pkl
-
+*.npz
 # Keep the processed spots file in repo (small, required)
 !data/processed/spots.pkl
 
@@ -54,3 +54,6 @@ htmlcov/
 
 # CDS API credentials (never commit!)
 .cdsapirc
+data/arco_checkpoint.json
+.claude/settings.local.json
+.claude/settings.local.json
