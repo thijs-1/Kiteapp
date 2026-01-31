@@ -8,7 +8,31 @@
       "Bash(tree:*)",
       "Bash(./venv/Scripts/pip install h5netcdf)",
       "Bash(npm run build:*)",
-      "Bash(dir /s \"C:\\\\Users\\\\thijs\\\\Kiteapp3\\\\frontend\\\\src\")"
+      "Bash(dir /s \"C:\\\\Users\\\\thijs\\\\Kiteapp3\\\\frontend\\\\src\")",
+      "WebSearch",
+      "Bash(.\\\\venv\\\\Scripts\\\\pip install:*)",
+      "Bash(./venv/Scripts/pip install:*)",
+      "Bash(./venv/Scripts/python:*)",
+      "Bash(cd:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "WebFetch(domain:docs.xarray.dev)",
+      "Bash(venv/Scripts/python.exe -m py_compile:*)",
+      "Bash(time venv/Scripts/python.exe -m data_pipelines.main:*)",
+      "Bash(venv/Scripts/python.exe:*)",
+      "Bash(ls:*)",
+      "Bash(cmd /c \".\\\\venv\\\\Scripts\\\\python -m data_pipelines.main --help\")",
+      "Bash(.\\\\venv\\\\Scripts\\\\python:*)",
+      "Bash(dir:*)",
+      "Bash(Get-ChildItem -Path \"C:\\\\Users\\\\thijs\\\\Kiteapp3\" -Filter \"*.md\" -File)",
+      "Bash(Select-Object Name, FullName)",
+      "Bash(git -C \"C:\\\\Users\\\\thijs\\\\Kiteapp3\" diff backend/services/spot_service.py)",
+      "Bash(git -C \"C:\\\\Users\\\\thijs\\\\Kiteapp3\" pull --rebase)",
+      "Bash(git -C \"C:\\\\Users\\\\thijs\\\\Kiteapp3\" stash:*)",
+      "Bash(git -C \"C:\\\\Users\\\\thijs\\\\Kiteapp3\" stash pop)",
+      "Bash(.\\\\venv\\\\Scripts\\\\pytest:*)",
+      "Bash(C:UsersthijsKiteapp3venvScriptspytest.exe tests/data_pipelines/ -v)"
     ]
   }
 }
