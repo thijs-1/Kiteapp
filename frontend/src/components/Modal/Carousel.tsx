@@ -72,15 +72,15 @@ export function Carousel({ spotId }: CarouselProps) {
       </h3>
 
       {/* Chart container with navigation */}
-      <div className="flex-1 flex items-center gap-4 min-h-0">
-        {/* Previous button */}
+      <div className="flex-1 flex items-center gap-2 sm:gap-4 min-h-0">
+        {/* Previous button - larger touch target */}
         <button
           onClick={goToPrev}
-          className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+          className="p-3 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors flex-shrink-0 touch-manipulation"
           aria-label="Previous chart"
         >
           <svg
-            className="w-8 h-8 text-gray-400"
+            className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -101,14 +101,14 @@ export function Carousel({ spotId }: CarouselProps) {
           {activeIndex === 2 && <WindRose spotId={spotId} />}
         </div>
 
-        {/* Next button */}
+        {/* Next button - larger touch target */}
         <button
           onClick={goToNext}
-          className="p-2 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0"
+          className="p-3 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors flex-shrink-0 touch-manipulation"
           aria-label="Next chart"
         >
           <svg
-            className="w-8 h-8 text-gray-400"
+            className="w-6 h-6 sm:w-8 sm:h-8 text-gray-400"
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -123,17 +123,21 @@ export function Carousel({ spotId }: CarouselProps) {
         </button>
       </div>
 
-      {/* Dot indicators */}
-      <div className="flex justify-center gap-2 pt-4">
+      {/* Dot indicators - 44px touch targets with visual dot inside */}
+      <div className="flex justify-center gap-1 pt-2 sm:pt-4">
         {[0, 1, 2].map((index) => (
           <button
             key={index}
             onClick={() => setActiveIndex(index)}
-            className={`w-3 h-3 rounded-full transition-colors ${
-              index === activeIndex ? 'bg-kite-pink' : 'bg-gray-300 hover:bg-gray-400'
-            }`}
+            className="w-11 h-11 flex items-center justify-center touch-manipulation"
             aria-label={`Go to ${CHART_TITLES[index]}`}
-          />
+          >
+            <span
+              className={`w-3 h-3 rounded-full transition-colors ${
+                index === activeIndex ? 'bg-kite-pink' : 'bg-gray-300'
+              }`}
+            />
+          </button>
         ))}
       </div>
     </div>
