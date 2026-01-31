@@ -121,6 +121,8 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
       const touch = e.touches[0];
       const index = getDateIndexFromX(touch.clientX);
       if (index !== null) {
+        // Stop propagation to prevent Carousel swipe from interfering
+        e.stopPropagation();
         isDraggingRef.current = true;
         selectionStartRef.current = index;
         selectionEndRef.current = index;
@@ -142,7 +144,10 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
       }
     };
 
-    const handleTouchEnd = () => {
+    const handleTouchEnd = (e: TouchEvent) => {
+      // Stop propagation to prevent Carousel swipe from interfering
+      e.stopPropagation();
+
       if (!isDraggingRef.current || selectionStartRef.current === null || selectionEndRef.current === null) {
         isDraggingRef.current = false;
         selectionStartRef.current = null;

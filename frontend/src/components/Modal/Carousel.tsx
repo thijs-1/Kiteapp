@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { KiteableLineChart } from './Charts/KiteableLineChart';
 import { WindHistogram } from './Charts/WindHistogram';
 import { WindRose } from './Charts/WindRose';
@@ -22,13 +22,40 @@ export function Carousel({ spotId }: CarouselProps) {
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
-  const goToPrev = useCallback(() => {
-    setActiveIndex((prev) => (prev - 1 + 3) % 3);
+  // Track which button is pressed for mobile-friendly feedback
+  const [pressedButton, setPressedButton] = useState<'prev' | 'next' | null>(null);
+  const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Clear pressed state after animation completes
+  useEffect(() => {
+    return () => {
+      if (pressTimeoutRef.current) {
+        clearTimeout(pressTimeoutRef.current);
+      }
+    };
   }, []);
 
-  const goToNext = useCallback(() => {
-    setActiveIndex((prev) => (prev + 1) % 3);
+  const handleButtonPress = useCallback((button: 'prev' | 'next') => {
+    // Clear any existing timeout
+    if (pressTimeoutRef.current) {
+      clearTimeout(pressTimeoutRef.current);
+    }
+    setPressedButton(button);
+    // Clear the pressed state after 150ms (matches transition duration)
+    pressTimeoutRef.current = setTimeout(() => {
+      setPressedButton(null);
+    }, 150);
   }, []);
+
+  const goToPrev = useCallback(() => {
+    handleButtonPress('prev');
+    setActiveIndex((prev) => (prev - 1 + 3) % 3);
+  }, [handleButtonPress]);
+
+  const goToNext = useCallback(() => {
+    handleButtonPress('next');
+    setActiveIndex((prev) => (prev + 1) % 3);
+  }, [handleButtonPress]);
 
   // Swipe gesture handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
@@ -76,7 +103,9 @@ export function Carousel({ spotId }: CarouselProps) {
         {/* Previous button - larger touch target */}
         <button
           onClick={goToPrev}
-          className="p-3 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors flex-shrink-0 touch-manipulation"
+          className={`p-3 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 touch-manipulation ${
+            pressedButton === 'prev' ? 'bg-gray-200' : ''
+          }`}
           aria-label="Previous chart"
         >
           <svg
@@ -104,7 +133,9 @@ export function Carousel({ spotId }: CarouselProps) {
         {/* Next button - larger touch target */}
         <button
           onClick={goToNext}
-          className="p-3 hover:bg-gray-100 active:bg-gray-200 rounded-full transition-colors flex-shrink-0 touch-manipulation"
+          className={`p-3 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 touch-manipulation ${
+            pressedButton === 'next' ? 'bg-gray-200' : ''
+          }`}
           aria-label="Next chart"
         >
           <svg
