@@ -1,4 +1,4 @@
-import { useRef, useState, useCallback, ReactNode } from 'react';
+import { useRef, useState, useCallback, useEffect, ReactNode } from 'react';
 import { useFilterStore } from '../../../store/filterStore';
 
 interface Props {
@@ -16,6 +16,11 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
   const { startDate, endDate, setDateRange } = useFilterStore();
+
+  // Use refs to track touch state for native event handlers
+  const isDraggingRef = useRef(false);
+  const selectionStartRef = useRef<number | null>(null);
+  const selectionEndRef = useRef<number | null>(null);
 
   const isZoomedIn = startDate !== FULL_YEAR_START || endDate !== FULL_YEAR_END;
 
@@ -103,57 +108,78 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
     setDateRange(FULL_YEAR_START, FULL_YEAR_END);
   }, [setDateRange]);
 
-  // Touch event handlers for mobile support
-  const handleTouchStart = useCallback(
-    (e: React.TouchEvent) => {
+  // Native touch event handlers for mobile support
+  // Using native events with { passive: false } to allow preventDefault()
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+
+    const handleTouchStart = (e: TouchEvent) => {
       if (disabled || e.touches.length !== 1) return;
       const touch = e.touches[0];
       const index = getDateIndexFromX(touch.clientX);
       if (index !== null) {
+        isDraggingRef.current = true;
+        selectionStartRef.current = index;
+        selectionEndRef.current = index;
         setIsDragging(true);
         setSelectionStart(index);
         setSelectionEnd(index);
       }
-    },
-    [disabled, getDateIndexFromX]
-  );
+    };
 
-  const handleTouchMove = useCallback(
-    (e: React.TouchEvent) => {
-      if (!isDragging || e.touches.length !== 1) return;
+    const handleTouchMove = (e: TouchEvent) => {
+      if (!isDraggingRef.current || e.touches.length !== 1) return;
       // Prevent page scroll while dragging on chart
       e.preventDefault();
       const touch = e.touches[0];
       const index = getDateIndexFromX(touch.clientX);
       if (index !== null) {
+        selectionEndRef.current = index;
         setSelectionEnd(index);
       }
-    },
-    [isDragging, getDateIndexFromX]
-  );
+    };
 
-  const handleTouchEnd = useCallback(() => {
-    if (!isDragging || selectionStart === null || selectionEnd === null) {
+    const handleTouchEnd = () => {
+      if (!isDraggingRef.current || selectionStartRef.current === null || selectionEndRef.current === null) {
+        isDraggingRef.current = false;
+        selectionStartRef.current = null;
+        selectionEndRef.current = null;
+        setIsDragging(false);
+        setSelectionStart(null);
+        setSelectionEnd(null);
+        return;
+      }
+
+      const startIdx = Math.min(selectionStartRef.current, selectionEndRef.current);
+      const endIdx = Math.max(selectionStartRef.current, selectionEndRef.current);
+
+      // Only update if selection spans at least a few days
+      if (endIdx - startIdx >= 2) {
+        const newStartDate = dates[startIdx];
+        const newEndDate = dates[endIdx];
+        setDateRange(newStartDate, newEndDate);
+      }
+
+      isDraggingRef.current = false;
+      selectionStartRef.current = null;
+      selectionEndRef.current = null;
       setIsDragging(false);
       setSelectionStart(null);
       setSelectionEnd(null);
-      return;
-    }
+    };
 
-    const startIdx = Math.min(selectionStart, selectionEnd);
-    const endIdx = Math.max(selectionStart, selectionEnd);
+    // Attach with { passive: false } to allow preventDefault() in touchmove
+    container.addEventListener('touchstart', handleTouchStart, { passive: true });
+    container.addEventListener('touchmove', handleTouchMove, { passive: false });
+    container.addEventListener('touchend', handleTouchEnd, { passive: true });
 
-    // Only update if selection spans at least a few days
-    if (endIdx - startIdx >= 2) {
-      const newStartDate = dates[startIdx];
-      const newEndDate = dates[endIdx];
-      setDateRange(newStartDate, newEndDate);
-    }
-
-    setIsDragging(false);
-    setSelectionStart(null);
-    setSelectionEnd(null);
-  }, [isDragging, selectionStart, selectionEnd, dates, setDateRange]);
+    return () => {
+      container.removeEventListener('touchstart', handleTouchStart);
+      container.removeEventListener('touchmove', handleTouchMove);
+      container.removeEventListener('touchend', handleTouchEnd);
+    };
+  }, [disabled, dates, getDateIndexFromX, setDateRange]);
 
   // Calculate selection overlay position
   const getSelectionStyle = (): React.CSSProperties | null => {
@@ -209,16 +235,13 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
   return (
     <div
       ref={containerRef}
-      className="relative h-full select-none touch-none"
+      className="relative h-full select-none"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
       onDoubleClick={handleDoubleClick}
-      onTouchStart={handleTouchStart}
-      onTouchMove={handleTouchMove}
-      onTouchEnd={handleTouchEnd}
-      style={{ cursor: disabled ? 'default' : 'crosshair' }}
+      style={{ cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
     >
       {children}
 
