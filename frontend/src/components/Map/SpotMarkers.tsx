@@ -58,15 +58,18 @@ function SpotMarker({ spot, onSelect, isMobile }: SpotMarkerProps) {
     </div>
   );
 
+  // Larger touch target on mobile for easier tapping
+  const markerRadius = isMobile ? 12 : 6;
+
   return (
     <CircleMarker
       center={[spot.latitude, spot.longitude]}
-      radius={6}
+      radius={markerRadius}
       pathOptions={{
         color: '#FF1493',
         fillColor: '#FF69B4',
-        fillOpacity: 0.8,
-        weight: 1,
+        fillOpacity: isMobile ? 0.6 : 0.8,
+        weight: isMobile ? 2 : 1,
       }}
       eventHandlers={{
         click: handleMarkerClick,
