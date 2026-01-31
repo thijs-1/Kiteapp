@@ -12,6 +12,7 @@ const FULL_YEAR_END = '12-31';
 
 export function ChartDateRangeSelector({ children, dates, disabled = false }: Props) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const overlayRef = useRef<HTMLDivElement>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
@@ -110,9 +111,10 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
 
   // Native touch event handlers for mobile support
   // Using native events with { passive: false } to allow preventDefault()
+  // Attached to overlay element which sits above the Chart.js canvas
   useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return;
+    const overlay = overlayRef.current;
+    if (!overlay) return;
 
     const handleTouchStart = (e: TouchEvent) => {
       if (disabled || e.touches.length !== 1) return;
@@ -170,14 +172,14 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
     };
 
     // Attach with { passive: false } to allow preventDefault() in touchmove
-    container.addEventListener('touchstart', handleTouchStart, { passive: true });
-    container.addEventListener('touchmove', handleTouchMove, { passive: false });
-    container.addEventListener('touchend', handleTouchEnd, { passive: true });
+    overlay.addEventListener('touchstart', handleTouchStart, { passive: true });
+    overlay.addEventListener('touchmove', handleTouchMove, { passive: false });
+    overlay.addEventListener('touchend', handleTouchEnd, { passive: true });
 
     return () => {
-      container.removeEventListener('touchstart', handleTouchStart);
-      container.removeEventListener('touchmove', handleTouchMove);
-      container.removeEventListener('touchend', handleTouchEnd);
+      overlay.removeEventListener('touchstart', handleTouchStart);
+      overlay.removeEventListener('touchmove', handleTouchMove);
+      overlay.removeEventListener('touchend', handleTouchEnd);
     };
   }, [disabled, dates, getDateIndexFromX, setDateRange]);
 
@@ -236,14 +238,21 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
     <div
       ref={containerRef}
       className="relative h-full select-none"
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={handleMouseLeave}
-      onDoubleClick={handleDoubleClick}
-      style={{ cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
+      style={{ touchAction: 'none' }}
     >
       {children}
+
+      {/* Transparent overlay to capture touch/mouse events above the chart canvas */}
+      <div
+        ref={overlayRef}
+        className="absolute inset-0"
+        style={{ cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={handleMouseLeave}
+        onDoubleClick={handleDoubleClick}
+      />
 
       {/* Selection overlay */}
       {selectionStyle && (
