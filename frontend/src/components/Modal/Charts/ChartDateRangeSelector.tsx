@@ -103,6 +103,58 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
     setDateRange(FULL_YEAR_START, FULL_YEAR_END);
   }, [setDateRange]);
 
+  // Touch event handlers for mobile support
+  const handleTouchStart = useCallback(
+    (e: React.TouchEvent) => {
+      if (disabled || e.touches.length !== 1) return;
+      const touch = e.touches[0];
+      const index = getDateIndexFromX(touch.clientX);
+      if (index !== null) {
+        setIsDragging(true);
+        setSelectionStart(index);
+        setSelectionEnd(index);
+      }
+    },
+    [disabled, getDateIndexFromX]
+  );
+
+  const handleTouchMove = useCallback(
+    (e: React.TouchEvent) => {
+      if (!isDragging || e.touches.length !== 1) return;
+      // Prevent page scroll while dragging on chart
+      e.preventDefault();
+      const touch = e.touches[0];
+      const index = getDateIndexFromX(touch.clientX);
+      if (index !== null) {
+        setSelectionEnd(index);
+      }
+    },
+    [isDragging, getDateIndexFromX]
+  );
+
+  const handleTouchEnd = useCallback(() => {
+    if (!isDragging || selectionStart === null || selectionEnd === null) {
+      setIsDragging(false);
+      setSelectionStart(null);
+      setSelectionEnd(null);
+      return;
+    }
+
+    const startIdx = Math.min(selectionStart, selectionEnd);
+    const endIdx = Math.max(selectionStart, selectionEnd);
+
+    // Only update if selection spans at least a few days
+    if (endIdx - startIdx >= 2) {
+      const newStartDate = dates[startIdx];
+      const newEndDate = dates[endIdx];
+      setDateRange(newStartDate, newEndDate);
+    }
+
+    setIsDragging(false);
+    setSelectionStart(null);
+    setSelectionEnd(null);
+  }, [isDragging, selectionStart, selectionEnd, dates, setDateRange]);
+
   // Calculate selection overlay position
   const getSelectionStyle = (): React.CSSProperties | null => {
     if (!isDragging || selectionStart === null || selectionEnd === null || !containerRef.current) {
@@ -157,12 +209,15 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
   return (
     <div
       ref={containerRef}
-      className="relative h-full select-none"
+      className="relative h-full select-none touch-none"
       onMouseDown={handleMouseDown}
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseLeave}
       onDoubleClick={handleDoubleClick}
+      onTouchStart={handleTouchStart}
+      onTouchMove={handleTouchMove}
+      onTouchEnd={handleTouchEnd}
       style={{ cursor: disabled ? 'default' : 'crosshair' }}
     >
       {children}
