@@ -10,11 +10,11 @@ from data_pipelines.services.daylight_service import DaylightService
 
 
 class SustainedWindBuilder:
-    """Service for computing daily sustained wind histograms.
+    """Service for computing daily sustained wind percentage histograms.
 
-    For each day of year, computes a histogram counting how many calendar days
-    (across all years) had max sustained wind in each bin. This allows computing
-    "what % of days have sustained wind >= X knots" for filtering.
+    For each day of year, computes the percentage of calendar days (across all
+    years) that had max sustained wind in each bin. To get "% of days with
+    sustained wind >= X knots", sum the percentages from bin X onwards.
 
     Only considers daylight hours when filtering is enabled.
     """
@@ -92,11 +92,12 @@ class SustainedWindBuilder:
         longitude: Optional[float] = None,
     ) -> DailySustainedWind:
         """
-        Build daily sustained wind histogram data.
+        Build daily sustained wind percentage histogram data.
 
-        For each day of year, creates a histogram counting how many calendar days
-        (across all years) had max sustained wind in each bin. This allows computing
-        "what % of days have sustained wind >= X knots" for any threshold.
+        For each day of year, creates a histogram showing the percentage of
+        calendar days (across all years) that had max sustained wind in each bin.
+        To get "% of days with sustained wind >= X knots", sum percentages from
+        bin X onwards.
 
         Args:
             spot_id: ID of the spot
@@ -106,10 +107,8 @@ class SustainedWindBuilder:
             longitude: Spot longitude for daylight filtering
 
         Returns:
-            DailySustainedWind with histogram counts per day-of-year
+            DailySustainedWind with percentage histogram per day-of-year
         """
-        num_bins = len(self.bins) - 1
-
         # Apply daylight filter if enabled
         timestamps, wind_strength = self._apply_daylight_filter(
             timestamps, wind_strength, latitude, longitude
@@ -120,7 +119,7 @@ class SustainedWindBuilder:
                 spot_id=spot_id,
                 sustained_hours=self.sustained_hours,
                 bins=self.bins,
-                daily_counts={},
+                daily_percentages={},
             )
 
         # Convert to pandas for easier date handling
@@ -149,16 +148,22 @@ class SustainedWindBuilder:
             # Include all values (even 0) to count days with insufficient data
             calendar_day_sustained[day_of_year].append(max_sustained)
 
-        # Build histograms by day-of-year
-        daily_counts: Dict[str, np.ndarray] = {}
+        # Build percentage histograms by day-of-year
+        daily_percentages: Dict[str, np.ndarray] = {}
         for day_of_year, values in calendar_day_sustained.items():
             # Bin the sustained wind values into histogram
             counts, _ = np.histogram(values, bins=self.bins)
-            daily_counts[day_of_year] = counts.astype(np.float32)
+            # Convert counts to percentages
+            total = counts.sum()
+            if total > 0:
+                percentages = (counts / total) * 100.0
+            else:
+                percentages = counts.astype(np.float32)
+            daily_percentages[day_of_year] = percentages.astype(np.float32)
 
         return DailySustainedWind(
             spot_id=spot_id,
             sustained_hours=self.sustained_hours,
             bins=self.bins,
-            daily_counts=daily_counts,
+            daily_percentages=daily_percentages,
         )

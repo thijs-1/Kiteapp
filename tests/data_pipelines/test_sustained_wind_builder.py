@@ -67,8 +67,8 @@ class TestSustainedWindBuilder:
         result = builder._compute_rolling_min_max(wind_strength, window_size=3)
         assert result == 20.0
 
-    def test_build_histogram_single_day(self):
-        """Test building histogram for a single day."""
+    def test_build_percentage_single_day(self):
+        """Test building percentage histogram for a single day."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
 
         # Create 24 hours of data for one day with sustained 15 knots
@@ -85,17 +85,16 @@ class TestSustainedWindBuilder:
         assert result.spot_id == "test_spot"
         assert result.sustained_hours == 2
         assert result.bins == WIND_BINS
-        assert "06-21" in result.daily_counts
+        assert "06-21" in result.daily_percentages
 
-        # 15 knots falls in bin [12.5, 15) which is index 5, or bin [15, 17.5) which is index 6
-        # Bins: [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, ...]
         # 15.0 falls in bin index 6 (15 <= x < 17.5)
-        counts = result.daily_counts["06-21"]
-        assert counts.sum() == 1  # One calendar day
-        assert counts[6] == 1  # 15 knots is in bin [15, 17.5)
+        # With only one day, that bin should be 100%
+        percentages = result.daily_percentages["06-21"]
+        assert percentages.sum() == pytest.approx(100.0)
+        assert percentages[6] == pytest.approx(100.0)
 
-    def test_build_histogram_multi_year(self):
-        """Test that multi-year data creates histogram counts (not averages)."""
+    def test_build_percentage_multi_year(self):
+        """Test that multi-year data creates correct percentages."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
 
         # Create data for same day across two years
@@ -121,19 +120,19 @@ class TestSustainedWindBuilder:
             "test_spot", timestamps, wind_strength
         )
 
-        assert "06-21" in result.daily_counts
-        counts = result.daily_counts["06-21"]
+        assert "06-21" in result.daily_percentages
+        percentages = result.daily_percentages["06-21"]
 
-        # Should have 2 total days counted
-        assert counts.sum() == 2
+        # Should sum to 100%
+        assert percentages.sum() == pytest.approx(100.0)
 
-        # 15 knots in bin [15, 17.5) = index 6
-        # 25 knots in bin [25, 27.5) = index 10
-        assert counts[6] == 1
-        assert counts[10] == 1
+        # 15 knots in bin [15, 17.5) = index 6 -> 50%
+        # 25 knots in bin [25, 27.5) = index 10 -> 50%
+        assert percentages[6] == pytest.approx(50.0)
+        assert percentages[10] == pytest.approx(50.0)
 
-    def test_percentage_calculation(self):
-        """Test that histogram allows percentage calculation."""
+    def test_percentage_above_threshold(self):
+        """Test calculating percentage of days above a threshold."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
 
         # Create 10 years of data for June 21
@@ -160,18 +159,21 @@ class TestSustainedWindBuilder:
             "test_spot", timestamps, wind_strength
         )
 
-        counts = result.daily_counts["06-21"]
-        total_days = counts.sum()
+        percentages = result.daily_percentages["06-21"]
 
-        # Calculate percentage of days with sustained wind >= 15 knots
+        # Should sum to 100%
+        assert percentages.sum() == pytest.approx(100.0)
+
+        # Percentage of days with sustained wind >= 15 knots
         # Bins: [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, ...]
-        # Index 6 is [15, 17.5), we want sum from index 6 onwards
-        days_above_15 = counts[6:].sum()
-        percentage = (days_above_15 / total_days) * 100
+        # Index 6 is [15, 17.5), sum from index 6 onwards
+        pct_above_15 = percentages[6:].sum()
+        assert pct_above_15 == pytest.approx(70.0)
 
-        assert total_days == 10
-        assert days_above_15 == 7
-        assert percentage == 70.0
+        # 5 knots is in bin [5, 7.5) = index 2
+        assert percentages[2] == pytest.approx(30.0)
+        # 20 knots is in bin [20, 22.5) = index 8
+        assert percentages[8] == pytest.approx(70.0)
 
     def test_to_dict(self):
         """Test that to_dict returns serializable data."""
@@ -191,8 +193,9 @@ class TestSustainedWindBuilder:
         assert data["spot_id"] == "test_spot"
         assert data["sustained_hours"] == 2
         assert data["bins"] == WIND_BINS
-        assert "06-21" in data["daily_counts"]
-        assert isinstance(data["daily_counts"]["06-21"], list)
+        assert "06-21" in data["daily_percentages"]
+        assert isinstance(data["daily_percentages"]["06-21"], list)
+        assert sum(data["daily_percentages"]["06-21"]) == pytest.approx(100.0)
 
     def test_empty_data(self):
         """Test handling of empty data."""
@@ -206,7 +209,7 @@ class TestSustainedWindBuilder:
         )
 
         assert result.spot_id == "test_spot"
-        assert result.daily_counts == {}
+        assert result.daily_percentages == {}
 
     def test_daylight_filter_enabled_by_default(self):
         """Test that daylight filtering uses config default."""

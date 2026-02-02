@@ -405,11 +405,11 @@ class PipelineOrchestrator:
         print(f"Saved 1D histograms: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {self._num_bins} bins")
 
     def add_sustained_wind(self, spot_id: str, sustained_wind) -> None:
-        """Add sustained wind histogram data to accumulator."""
-        self._sustained_wind_data[spot_id] = sustained_wind.daily_counts
+        """Add sustained wind percentage data to accumulator."""
+        self._sustained_wind_data[spot_id] = sustained_wind.daily_percentages
 
     def save_all_sustained_wind(self) -> None:
-        """Save all accumulated sustained wind histogram data as a single file."""
+        """Save all accumulated sustained wind percentage data as a single file."""
         if not self._sustained_wind_data:
             print("No sustained wind data to save.")
             return
@@ -418,27 +418,27 @@ class PipelineOrchestrator:
         num_spots = len(spot_ids)
 
         # Create a 3D array: (num_spots, 366 days, num_bins)
-        # Same structure as 1D histograms
+        # Each bin contains the percentage of days with sustained wind in that range
         data = np.zeros((num_spots, len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
         for i, spot_id in enumerate(spot_ids):
             daily_data = self._sustained_wind_data[spot_id]
-            for day, counts in daily_data.items():
+            for day, percentages in daily_data.items():
                 if day in self._day_to_idx:
-                    data[i, self._day_to_idx[day]] = counts
+                    data[i, self._day_to_idx[day]] = percentages
 
         result = {
             "spot_ids": spot_ids,
             "sustained_hours": SUSTAINED_WIND_HOURS,
             "bins": WIND_BINS,
             "days": DAYS_OF_YEAR,
-            "data": data,
+            "data": data,  # Percentages per bin (each day sums to 100)
         }
 
         save_pickle(result, SUSTAINED_WIND_FILE)
         print(f"Saved sustained wind: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {self._num_bins} bins ({SUSTAINED_WIND_HOURS}h sustained)")
 
     def load_existing_sustained_wind(self) -> None:
-        """Load existing sustained wind histogram data if available."""
+        """Load existing sustained wind percentage data if available."""
         if SUSTAINED_WIND_FILE.exists() and self.skip_existing_histograms:
             import pickle
             with open(SUSTAINED_WIND_FILE, "rb") as f:
