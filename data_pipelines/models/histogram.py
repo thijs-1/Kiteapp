@@ -40,3 +40,25 @@ class DailyHistogram2D:
             "direction_bins": self.direction_bins,
             "daily_counts": {k: v.tolist() for k, v in self.daily_counts.items()},
         }
+
+
+@define
+class DailySustainedWind:
+    """Daily maximum wind strength sustained for a minimum duration.
+
+    Records the maximum wind strength that was maintained for at least
+    `sustained_hours` consecutive hours, aggregated by day of year.
+    """
+
+    spot_id: str
+    sustained_hours: int  # Minimum consecutive hours required
+    # Dict mapping day-of-year ("01-01", ...) to max sustained wind strength (knots)
+    daily_max_sustained: Dict[str, float]
+
+    def to_dict(self) -> dict:
+        """Convert to serializable dictionary."""
+        return {
+            "spot_id": self.spot_id,
+            "sustained_hours": self.sustained_hours,
+            "daily_max_sustained": self.daily_max_sustained,
+        }
