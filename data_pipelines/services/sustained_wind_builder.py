@@ -4,16 +4,18 @@ from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from data_pipelines.config import SUSTAINED_WIND_HOURS, FILTER_DAYLIGHT_HOURS
+from data_pipelines.config import SUSTAINED_WIND_HOURS, FILTER_DAYLIGHT_HOURS, WIND_BINS
 from data_pipelines.models.histogram import DailySustainedWind
 from data_pipelines.services.daylight_service import DaylightService
 
 
 class SustainedWindBuilder:
-    """Service for computing daily maximum sustained wind strength.
+    """Service for computing daily sustained wind histograms.
 
-    Computes the maximum wind strength that was sustained for at least
-    a specified number of consecutive hours, aggregated by day of year.
+    For each day of year, computes a histogram counting how many calendar days
+    (across all years) had max sustained wind in each bin. This allows computing
+    "what % of days have sustained wind >= X knots" for filtering.
+
     Only considers daylight hours when filtering is enabled.
     """
 
@@ -21,6 +23,7 @@ class SustainedWindBuilder:
         self,
         sustained_hours: int = SUSTAINED_WIND_HOURS,
         filter_daylight: bool = FILTER_DAYLIGHT_HOURS,
+        bins: list = WIND_BINS,
     ):
         """
         Initialize sustained wind builder.
@@ -28,9 +31,11 @@ class SustainedWindBuilder:
         Args:
             sustained_hours: Minimum consecutive hours for sustained wind
             filter_daylight: Whether to filter out nighttime data
+            bins: Wind strength bin edges for histogram
         """
         self.sustained_hours = sustained_hours
         self.filter_daylight = filter_daylight
+        self.bins = bins
         self.daylight_service = DaylightService(filter_enabled=filter_daylight)
 
     def _apply_daylight_filter(
@@ -87,11 +92,11 @@ class SustainedWindBuilder:
         longitude: Optional[float] = None,
     ) -> DailySustainedWind:
         """
-        Build daily maximum sustained wind strength data.
+        Build daily sustained wind histogram data.
 
-        For each day of year, computes the maximum wind strength that was
-        sustained for at least `sustained_hours` consecutive hours during
-        daylight hours. Aggregates across years by taking the mean.
+        For each day of year, creates a histogram counting how many calendar days
+        (across all years) had max sustained wind in each bin. This allows computing
+        "what % of days have sustained wind >= X knots" for any threshold.
 
         Args:
             spot_id: ID of the spot
@@ -101,8 +106,10 @@ class SustainedWindBuilder:
             longitude: Spot longitude for daylight filtering
 
         Returns:
-            DailySustainedWind with daily max sustained wind values
+            DailySustainedWind with histogram counts per day-of-year
         """
+        num_bins = len(self.bins) - 1
+
         # Apply daylight filter if enabled
         timestamps, wind_strength = self._apply_daylight_filter(
             timestamps, wind_strength, latitude, longitude
@@ -112,7 +119,8 @@ class SustainedWindBuilder:
             return DailySustainedWind(
                 spot_id=spot_id,
                 sustained_hours=self.sustained_hours,
-                daily_max_sustained={},
+                bins=self.bins,
+                daily_counts={},
             )
 
         # Convert to pandas for easier date handling
@@ -126,7 +134,7 @@ class SustainedWindBuilder:
             'strength': wind_strength,
         })
 
-        # Compute max sustained for each calendar date
+        # Compute max sustained for each calendar date, grouped by day-of-year
         calendar_day_sustained: Dict[str, List[float]] = defaultdict(list)
 
         for calendar_date, group in df.groupby('date'):
@@ -138,18 +146,19 @@ class SustainedWindBuilder:
                 day_strength, self.sustained_hours
             )
 
-            # Only include if we got a valid sustained wind value
-            if max_sustained > 0:
-                calendar_day_sustained[day_of_year].append(max_sustained)
+            # Include all values (even 0) to count days with insufficient data
+            calendar_day_sustained[day_of_year].append(max_sustained)
 
-        # Aggregate by day-of-year: take mean across all years
-        daily_max_sustained: Dict[str, float] = {}
+        # Build histograms by day-of-year
+        daily_counts: Dict[str, np.ndarray] = {}
         for day_of_year, values in calendar_day_sustained.items():
-            if values:
-                daily_max_sustained[day_of_year] = float(np.mean(values))
+            # Bin the sustained wind values into histogram
+            counts, _ = np.histogram(values, bins=self.bins)
+            daily_counts[day_of_year] = counts.astype(np.float32)
 
         return DailySustainedWind(
             spot_id=spot_id,
             sustained_hours=self.sustained_hours,
-            daily_max_sustained=daily_max_sustained,
+            bins=self.bins,
+            daily_counts=daily_counts,
         )

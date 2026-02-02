@@ -44,21 +44,24 @@ class DailyHistogram2D:
 
 @define
 class DailySustainedWind:
-    """Daily maximum wind strength sustained for a minimum duration.
+    """Daily histogram of maximum sustained wind strength.
 
-    Records the maximum wind strength that was maintained for at least
-    `sustained_hours` consecutive hours, aggregated by day of year.
+    For each day of year, stores a histogram counting how many calendar days
+    (across all years) had max sustained wind in each bin. This allows computing
+    "what % of days have sustained wind >= X knots" for any threshold.
     """
 
     spot_id: str
     sustained_hours: int  # Minimum consecutive hours required
-    # Dict mapping day-of-year ("01-01", ...) to max sustained wind strength (knots)
-    daily_max_sustained: Dict[str, float]
+    bins: list  # Wind strength bin edges (same as 1D histogram)
+    # Dict mapping day-of-year ("01-01", ...) to histogram counts per bin
+    daily_counts: Dict[str, np.ndarray]
 
     def to_dict(self) -> dict:
         """Convert to serializable dictionary."""
         return {
             "spot_id": self.spot_id,
             "sustained_hours": self.sustained_hours,
-            "daily_max_sustained": self.daily_max_sustained,
+            "bins": self.bins,
+            "daily_counts": {k: v.tolist() for k, v in self.daily_counts.items()},
         }

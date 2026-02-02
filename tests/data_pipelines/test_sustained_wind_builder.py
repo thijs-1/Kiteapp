@@ -3,6 +3,7 @@ import numpy as np
 import pytest
 
 from data_pipelines.services.sustained_wind_builder import SustainedWindBuilder
+from data_pipelines.config import WIND_BINS
 
 
 class TestSustainedWindBuilder:
@@ -66,22 +67,16 @@ class TestSustainedWindBuilder:
         result = builder._compute_rolling_min_max(wind_strength, window_size=3)
         assert result == 20.0
 
-    def test_build_daily_sustained_wind_basic(self):
-        """Test building daily sustained wind data."""
+    def test_build_histogram_single_day(self):
+        """Test building histogram for a single day."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
 
-        # Create 24 hours of data for one day
+        # Create 24 hours of data for one day with sustained 15 knots
         timestamps = np.array([
             np.datetime64("2024-06-21") + np.timedelta64(h, 'h')
             for h in range(24)
         ])
-
-        # Wind with sustained high in middle of day
-        wind_strength = np.concatenate([
-            np.ones(8, dtype=np.float32) * 10,    # 10 knots for 8 hours
-            np.ones(8, dtype=np.float32) * 25,    # 25 knots for 8 hours (sustained)
-            np.ones(8, dtype=np.float32) * 10,    # 10 knots for 8 hours
-        ])
+        wind_strength = np.ones(24, dtype=np.float32) * 15
 
         result = builder.build_daily_sustained_wind(
             "test_spot", timestamps, wind_strength
@@ -89,78 +84,34 @@ class TestSustainedWindBuilder:
 
         assert result.spot_id == "test_spot"
         assert result.sustained_hours == 2
-        assert "06-21" in result.daily_max_sustained
-        # Max sustained should be 25 (sustained for 8 hours)
-        assert result.daily_max_sustained["06-21"] == 25.0
+        assert result.bins == WIND_BINS
+        assert "06-21" in result.daily_counts
 
-    def test_build_daily_sustained_wind_multiple_days(self):
-        """Test building sustained wind for multiple days."""
-        builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
+        # 15 knots falls in bin [12.5, 15) which is index 5, or bin [15, 17.5) which is index 6
+        # Bins: [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, ...]
+        # 15.0 falls in bin index 6 (15 <= x < 17.5)
+        counts = result.daily_counts["06-21"]
+        assert counts.sum() == 1  # One calendar day
+        assert counts[6] == 1  # 15 knots is in bin [15, 17.5)
 
-        # Create 48 hours of data for two days
-        timestamps = np.array([
-            np.datetime64("2024-06-21") + np.timedelta64(h, 'h')
-            for h in range(48)
-        ])
-
-        # Day 1: max sustained 15 knots, Day 2: max sustained 20 knots
-        wind_strength = np.concatenate([
-            np.ones(24, dtype=np.float32) * 15,  # Day 1: constant 15
-            np.ones(24, dtype=np.float32) * 20,  # Day 2: constant 20
-        ])
-
-        result = builder.build_daily_sustained_wind(
-            "test_spot", timestamps, wind_strength
-        )
-
-        assert "06-21" in result.daily_max_sustained
-        assert "06-22" in result.daily_max_sustained
-        assert result.daily_max_sustained["06-21"] == 15.0
-        assert result.daily_max_sustained["06-22"] == 20.0
-
-    def test_build_daily_sustained_wind_variable_conditions(self):
-        """Test with realistic variable wind conditions."""
-        builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
-
-        # Create 24 hours: gusty start, sustained middle, gusty end
-        timestamps = np.array([
-            np.datetime64("2024-06-21") + np.timedelta64(h, 'h')
-            for h in range(24)
-        ])
-
-        # Pattern: [5, 15, 8, 12, 10, 18, 18, 18, 18, 18, 18, 18, 10, 5, ...]
-        wind_strength = np.array([
-            5, 15, 8, 12, 10,           # Variable morning (5 hours)
-            18, 18, 18, 18, 18, 18, 18, # Sustained afternoon (7 hours at 18)
-            10, 5, 8, 12, 6, 4, 5, 6,   # Variable evening (8 hours)
-            3, 4, 2, 3,                 # Night (4 hours)
-        ], dtype=np.float32)
-
-        result = builder.build_daily_sustained_wind(
-            "test_spot", timestamps, wind_strength
-        )
-
-        # Max sustained should be 18 (sustained for 7 hours)
-        assert result.daily_max_sustained["06-21"] == 18.0
-
-    def test_build_daily_sustained_wind_multi_year_averaging(self):
-        """Test that multi-year data is averaged correctly by day-of-year."""
+    def test_build_histogram_multi_year(self):
+        """Test that multi-year data creates histogram counts (not averages)."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
 
         # Create data for same day across two years
-        # Year 1: June 21 with sustained 20 knots
+        # Year 1: June 21 with sustained 15 knots
         timestamps_year1 = np.array([
             np.datetime64("2023-06-21") + np.timedelta64(h, 'h')
             for h in range(24)
         ])
-        wind_year1 = np.ones(24, dtype=np.float32) * 20
+        wind_year1 = np.ones(24, dtype=np.float32) * 15
 
-        # Year 2: June 21 with sustained 30 knots
+        # Year 2: June 21 with sustained 25 knots
         timestamps_year2 = np.array([
             np.datetime64("2024-06-21") + np.timedelta64(h, 'h')
             for h in range(24)
         ])
-        wind_year2 = np.ones(24, dtype=np.float32) * 30
+        wind_year2 = np.ones(24, dtype=np.float32) * 25
 
         # Combine both years
         timestamps = np.concatenate([timestamps_year1, timestamps_year2])
@@ -170,9 +121,57 @@ class TestSustainedWindBuilder:
             "test_spot", timestamps, wind_strength
         )
 
-        # Should average: (20 + 30) / 2 = 25
-        assert "06-21" in result.daily_max_sustained
-        assert result.daily_max_sustained["06-21"] == 25.0
+        assert "06-21" in result.daily_counts
+        counts = result.daily_counts["06-21"]
+
+        # Should have 2 total days counted
+        assert counts.sum() == 2
+
+        # 15 knots in bin [15, 17.5) = index 6
+        # 25 knots in bin [25, 27.5) = index 10
+        assert counts[6] == 1
+        assert counts[10] == 1
+
+    def test_percentage_calculation(self):
+        """Test that histogram allows percentage calculation."""
+        builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
+
+        # Create 10 years of data for June 21
+        # 7 years with 20 knots sustained, 3 years with 5 knots sustained
+        timestamps = []
+        wind_strength = []
+
+        for year in range(2015, 2025):
+            year_ts = np.array([
+                np.datetime64(f"{year}-06-21") + np.timedelta64(h, 'h')
+                for h in range(24)
+            ])
+            timestamps.append(year_ts)
+
+            if year < 2022:  # 7 years with 20 knots
+                wind_strength.append(np.ones(24, dtype=np.float32) * 20)
+            else:  # 3 years with 5 knots
+                wind_strength.append(np.ones(24, dtype=np.float32) * 5)
+
+        timestamps = np.concatenate(timestamps)
+        wind_strength = np.concatenate(wind_strength)
+
+        result = builder.build_daily_sustained_wind(
+            "test_spot", timestamps, wind_strength
+        )
+
+        counts = result.daily_counts["06-21"]
+        total_days = counts.sum()
+
+        # Calculate percentage of days with sustained wind >= 15 knots
+        # Bins: [0, 2.5, 5, 7.5, 10, 12.5, 15, 17.5, 20, 22.5, ...]
+        # Index 6 is [15, 17.5), we want sum from index 6 onwards
+        days_above_15 = counts[6:].sum()
+        percentage = (days_above_15 / total_days) * 100
+
+        assert total_days == 10
+        assert days_above_15 == 7
+        assert percentage == 70.0
 
     def test_to_dict(self):
         """Test that to_dict returns serializable data."""
@@ -191,10 +190,11 @@ class TestSustainedWindBuilder:
         data = result.to_dict()
         assert data["spot_id"] == "test_spot"
         assert data["sustained_hours"] == 2
-        assert "06-21" in data["daily_max_sustained"]
-        assert isinstance(data["daily_max_sustained"]["06-21"], float)
+        assert data["bins"] == WIND_BINS
+        assert "06-21" in data["daily_counts"]
+        assert isinstance(data["daily_counts"]["06-21"], list)
 
-    def test_empty_data_after_filter(self):
+    def test_empty_data(self):
         """Test handling of empty data."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
 
@@ -206,12 +206,15 @@ class TestSustainedWindBuilder:
         )
 
         assert result.spot_id == "test_spot"
-        assert result.daily_max_sustained == {}
+        assert result.daily_counts == {}
 
     def test_daylight_filter_enabled_by_default(self):
         """Test that daylight filtering uses config default."""
-        # The builder should use FILTER_DAYLIGHT_HOURS from config by default
         builder = SustainedWindBuilder(sustained_hours=2)
-        # filter_daylight should match the config value
         from data_pipelines.config import FILTER_DAYLIGHT_HOURS
         assert builder.filter_daylight == FILTER_DAYLIGHT_HOURS
+
+    def test_bins_match_config(self):
+        """Test that default bins match WIND_BINS config."""
+        builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
+        assert builder.bins == WIND_BINS
