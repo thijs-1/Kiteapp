@@ -143,6 +143,37 @@ class TestSustainedWindBuilder:
         # Max sustained should be 18 (sustained for 7 hours)
         assert result.daily_max_sustained["06-21"] == 18.0
 
+    def test_build_daily_sustained_wind_multi_year_averaging(self):
+        """Test that multi-year data is averaged correctly by day-of-year."""
+        builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
+
+        # Create data for same day across two years
+        # Year 1: June 21 with sustained 20 knots
+        timestamps_year1 = np.array([
+            np.datetime64("2023-06-21") + np.timedelta64(h, 'h')
+            for h in range(24)
+        ])
+        wind_year1 = np.ones(24, dtype=np.float32) * 20
+
+        # Year 2: June 21 with sustained 30 knots
+        timestamps_year2 = np.array([
+            np.datetime64("2024-06-21") + np.timedelta64(h, 'h')
+            for h in range(24)
+        ])
+        wind_year2 = np.ones(24, dtype=np.float32) * 30
+
+        # Combine both years
+        timestamps = np.concatenate([timestamps_year1, timestamps_year2])
+        wind_strength = np.concatenate([wind_year1, wind_year2])
+
+        result = builder.build_daily_sustained_wind(
+            "test_spot", timestamps, wind_strength
+        )
+
+        # Should average: (20 + 30) / 2 = 25
+        assert "06-21" in result.daily_max_sustained
+        assert result.daily_max_sustained["06-21"] == 25.0
+
     def test_to_dict(self):
         """Test that to_dict returns serializable data."""
         builder = SustainedWindBuilder(sustained_hours=2, filter_daylight=False)
@@ -176,3 +207,11 @@ class TestSustainedWindBuilder:
 
         assert result.spot_id == "test_spot"
         assert result.daily_max_sustained == {}
+
+    def test_daylight_filter_enabled_by_default(self):
+        """Test that daylight filtering uses config default."""
+        # The builder should use FILTER_DAYLIGHT_HOURS from config by default
+        builder = SustainedWindBuilder(sustained_hours=2)
+        # filter_daylight should match the config value
+        from data_pipelines.config import FILTER_DAYLIGHT_HOURS
+        assert builder.filter_daylight == FILTER_DAYLIGHT_HOURS

@@ -1,5 +1,6 @@
 """Service for computing maximum sustained wind strength from time series."""
-from typing import Dict, Optional, Tuple
+from collections import defaultdict
+from typing import Dict, List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
@@ -13,6 +14,7 @@ class SustainedWindBuilder:
 
     Computes the maximum wind strength that was sustained for at least
     a specified number of consecutive hours, aggregated by day of year.
+    Only considers daylight hours when filtering is enabled.
     """
 
     def __init__(
@@ -30,11 +32,6 @@ class SustainedWindBuilder:
         self.sustained_hours = sustained_hours
         self.filter_daylight = filter_daylight
         self.daylight_service = DaylightService(filter_enabled=filter_daylight)
-
-    def _get_day_of_year(self, timestamps: np.ndarray) -> np.ndarray:
-        """Convert timestamps to MM-DD format strings."""
-        dates = pd.to_datetime(timestamps)
-        return np.array([d.strftime("%m-%d") for d in dates])
 
     def _apply_daylight_filter(
         self,
@@ -93,7 +90,8 @@ class SustainedWindBuilder:
         Build daily maximum sustained wind strength data.
 
         For each day of year, computes the maximum wind strength that was
-        sustained for at least `sustained_hours` consecutive hours.
+        sustained for at least `sustained_hours` consecutive hours during
+        daylight hours. Aggregates across years by taking the mean.
 
         Args:
             spot_id: ID of the spot
@@ -117,20 +115,38 @@ class SustainedWindBuilder:
                 daily_max_sustained={},
             )
 
-        day_of_year = self._get_day_of_year(timestamps)
-        unique_days = sorted(set(day_of_year))
+        # Convert to pandas for easier date handling
+        dates = pd.to_datetime(timestamps)
 
-        daily_max_sustained: Dict[str, float] = {}
+        # Group by full calendar date (YYYY-MM-DD) first
+        # This ensures rolling window operates on consecutive hours within a day
+        df = pd.DataFrame({
+            'date': dates.date,
+            'day_of_year': [d.strftime("%m-%d") for d in dates],
+            'strength': wind_strength,
+        })
 
-        for day in unique_days:
-            mask = day_of_year == day
-            day_strength = wind_strength[mask]
+        # Compute max sustained for each calendar date
+        calendar_day_sustained: Dict[str, List[float]] = defaultdict(list)
 
-            # Compute max sustained wind for this day
+        for calendar_date, group in df.groupby('date'):
+            day_of_year = group['day_of_year'].iloc[0]
+            day_strength = group['strength'].values
+
+            # Compute max sustained wind for this calendar day
             max_sustained = self._compute_rolling_min_max(
                 day_strength, self.sustained_hours
             )
-            daily_max_sustained[day] = max_sustained
+
+            # Only include if we got a valid sustained wind value
+            if max_sustained > 0:
+                calendar_day_sustained[day_of_year].append(max_sustained)
+
+        # Aggregate by day-of-year: take mean across all years
+        daily_max_sustained: Dict[str, float] = {}
+        for day_of_year, values in calendar_day_sustained.items():
+            if values:
+                daily_max_sustained[day_of_year] = float(np.mean(values))
 
         return DailySustainedWind(
             spot_id=spot_id,
