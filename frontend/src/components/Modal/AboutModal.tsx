@@ -22,11 +22,11 @@ export function AboutModal() {
       {/* Floating info button */}
       <button
         onClick={() => setIsOpen(true)}
-        className="fixed top-4 right-4 z-[1000] p-2 bg-white/70 hover:bg-white/90 active:bg-white rounded-full shadow-lg transition-all"
+        className="fixed top-4 right-4 z-[1000] p-0 bg-transparent transition-all"
         aria-label="About"
       >
         <svg
-          className="w-6 h-6 text-gray-600"
+          className="w-12 h-12 text-white/70 hover:text-white drop-shadow-lg transition-colors"
           fill="none"
           stroke="currentColor"
           viewBox="0 0 24 24"
