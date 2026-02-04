@@ -20,6 +20,7 @@ export interface SpotFilters {
   country?: string;
   name?: string;
   min_percentage: number;
+  sustained_wind_min: number;
 }
 
 export interface HistogramData {

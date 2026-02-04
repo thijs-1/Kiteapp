@@ -18,6 +18,7 @@ async def get_filtered_spots(
     country: Optional[str] = Query(None, description="Filter by country code"),
     name: Optional[str] = Query(None, description="Filter by spot name"),
     min_percentage: float = Query(75, ge=0, le=100, description="Minimum kiteable percentage"),
+    sustained_wind_min: float = Query(0, ge=0, description="Minimum sustained wind threshold (knots)"),
     spot_service: SpotService = Depends(get_spot_service),
 ) -> List[SpotWithStats]:
     """
@@ -25,6 +26,10 @@ async def get_filtered_spots(
 
     Returns spots where wind is within the specified range for at least
     min_percentage of the time during the specified date range.
+
+    If sustained_wind_min is set, also filters to spots where at least
+    min_percentage of days have sustained wind (2+ consecutive hours)
+    at or above the threshold.
     """
     return spot_service.filter_spots(
         wind_min=wind_min,
@@ -34,6 +39,7 @@ async def get_filtered_spots(
         country=country,
         name=name,
         min_percentage=min_percentage,
+        sustained_wind_min=sustained_wind_min,
     )
 
 

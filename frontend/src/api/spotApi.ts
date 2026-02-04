@@ -12,6 +12,7 @@ export const spotApi = {
       start_date: filters.start_date ?? '01-01',
       end_date: filters.end_date ?? '12-31',
       min_percentage: filters.min_percentage ?? 75,
+      sustained_wind_min: filters.sustained_wind_min ?? 0,
       ...(filters.country && { country: filters.country }),
       ...(filters.name && { name: filters.name }),
     };

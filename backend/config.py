@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     spots_file: Path = processed_dir / "spots.pkl"
     histograms_1d_file: Path = processed_dir / "histograms_1d.pkl"  # Single 3D array
     histograms_2d_dir: Path = processed_dir / "histograms_2d"
+    sustained_wind_file: Path = processed_dir / "sustained_wind.pkl"
 
     # API settings
     api_title: str = "Kiteapp API"
@@ -23,6 +24,7 @@ class Settings(BaseSettings):
     default_wind_min: float = 0.0
     default_wind_max: float = float("inf")
     default_min_percentage: float = 75.0
+    default_sustained_wind_min: float = 0.0  # Minimum sustained wind threshold (knots)
     default_start_date: str = "01-01"
     default_end_date: str = "12-31"
     default_moving_avg_weeks: int = 1
