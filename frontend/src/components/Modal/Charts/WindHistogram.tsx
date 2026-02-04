@@ -17,28 +17,10 @@ import {
   getAggregationLevel,
   groupDatesByWeek,
 } from '../../../utils/dateUtils';
+import { WIND_COLORS } from '../../../utils/windColors';
 import { ChartDateRangeSelector } from './ChartDateRangeSelector';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
-
-// Fixed color map for wind strength bins
-const WIND_COLORS = [
-  '#E3F2FD', // 0-2.5: Very light blue
-  '#BBDEFB', // 2.5-5
-  '#90CAF9', // 5-7.5
-  '#64B5F6', // 7.5-10
-  '#42A5F5', // 10-12.5
-  '#2196F3', // 12.5-15: Blue
-  '#1E88E5', // 15-17.5
-  '#1976D2', // 17.5-20
-  '#1565C0', // 20-22.5
-  '#0D47A1', // 22.5-25
-  '#FFC107', // 25-27.5: Yellow/Orange
-  '#FF9800', // 27.5-30
-  '#FF5722', // 30-32.5
-  '#F44336', // 32.5-35
-  '#B71C1C', // 35+: Dark red
-];
 
 interface Props {
   spotId: string;
