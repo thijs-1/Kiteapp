@@ -10,6 +10,7 @@ import {
 } from 'chart.js';
 import { Radar } from 'react-chartjs-2';
 import { useWindRoseData } from '../../../hooks/useHistogram';
+import { WIND_COLORS } from '../../../utils/windColors';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 
@@ -52,25 +53,6 @@ const DIRECTION_LABELS = [
   '',    // 33 = 330°
   'NNW', // 34 = 340° (NNW is 337.5°)
   '',    // 35 = 350°
-];
-
-// Same color scheme as WindHistogram
-const WIND_COLORS = [
-  '#E3F2FD', // 0-2.5: Very light blue
-  '#BBDEFB', // 2.5-5
-  '#90CAF9', // 5-7.5
-  '#64B5F6', // 7.5-10
-  '#42A5F5', // 10-12.5
-  '#2196F3', // 12.5-15: Blue
-  '#1E88E5', // 15-17.5
-  '#1976D2', // 17.5-20
-  '#1565C0', // 20-22.5
-  '#0D47A1', // 22.5-25
-  '#FFC107', // 25-27.5: Yellow/Orange
-  '#FF9800', // 27.5-30
-  '#FF5722', // 30-32.5
-  '#F44336', // 32.5-35
-  '#B71C1C', // 35+: Dark red
 ];
 
 interface Props {
