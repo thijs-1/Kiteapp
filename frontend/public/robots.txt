@@ -5,7 +5,7 @@ User-agent: *
 Allow: /
 
 # Sitemap location
-Sitemap: https://kiteapp.io/sitemap.xml
+Sitemap: https://wheretokite.com/sitemap.xml
 
 # Crawl-delay for politeness (optional)
 Crawl-delay: 1
