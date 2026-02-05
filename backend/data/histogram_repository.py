@@ -41,6 +41,11 @@ class HistogramRepository:
         # Cache for 2D histograms (per-spot, loaded on demand)
         self._cache_2d: Dict[str, Dict[str, Any]] = {}
 
+    def preload(self) -> None:
+        """Preload all filter data (1D histograms and sustained wind) on startup."""
+        self._load_1d_data()
+        self._load_sustained_data()
+
     def _load_1d_data(self) -> None:
         """Load the 1D histogram 3D array."""
         if self._1d_loaded:
