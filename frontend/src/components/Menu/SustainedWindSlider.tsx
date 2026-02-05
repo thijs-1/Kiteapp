@@ -73,7 +73,7 @@ export function SustainedWindSlider() {
       {/* Days percentage slider - only show when wind threshold > 0 */}
       {localWindValue > 0 && (
         <div className="space-y-1">
-          <div className="text-xs text-gray-600">Minimum % of days</div>
+          <div className="text-xs text-gray-600">Kiteable day probability</div>
           <div className="px-2 pb-6">
             <Slider
               min={0}
@@ -99,7 +99,7 @@ export function SustainedWindSlider() {
         {localWindValue === 0 ? (
           'No sustained wind filter'
         ) : (
-          <>{localDaysValue}% of days with {localWindValue}+ knots for 2+ hours</>
+          <>Spots with probability greater than {localDaysValue}% for at least 2 hours of wind above {localWindValue} kts</>
         )}
       </div>
     </div>

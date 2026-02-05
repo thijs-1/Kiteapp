@@ -14,8 +14,8 @@ export function FilterPanel() {
   return (
     <div className="space-y-6">
       <WindRangeSlider />
-      <SustainedWindSlider />
       <PercentageSlider />
+      <SustainedWindSlider />
       <DateRangePicker />
       <CountrySelector />
       <SpotSearch />

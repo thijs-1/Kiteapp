@@ -23,7 +23,7 @@ export function PercentageSlider() {
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-700">
-        Minimum Kiteable %
+        Minimum Kiteable Hours %
       </label>
       <div className="px-2 pb-6">
         <Slider
