@@ -19,6 +19,7 @@ export function useFilteredSpots() {
         name: filters.spotName || undefined,
         min_percentage: filters.minPercentage,
         sustained_wind_min: filters.sustainedWindMin,
+        sustained_wind_days_min: filters.sustainedWindDaysMin,
       });
       setSpots(data);
       setLoading(false);
@@ -34,6 +35,7 @@ export function useFilteredSpots() {
     filters.spotName,
     filters.minPercentage,
     filters.sustainedWindMin,
+    filters.sustainedWindDaysMin,
     setSpots,
     setLoading,
     setError,

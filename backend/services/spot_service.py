@@ -183,6 +183,7 @@ class SpotService:
         name: Optional[str] = None,
         min_percentage: float = 75,
         sustained_wind_min: float = 0,
+        sustained_wind_days_min: float = 50,
     ) -> List[SpotWithStats]:
         """
         Filter spots based on criteria using vectorized operations.
@@ -196,8 +197,7 @@ class SpotService:
             name: Filter by spot name (substring)
             min_percentage: Minimum kiteable percentage
             sustained_wind_min: Minimum sustained wind threshold (knots)
-                Filters to spots where avg % of days with sustained wind >= this value
-                meets the min_percentage threshold
+            sustained_wind_days_min: Minimum % of days with sustained wind >= threshold
 
         Returns:
             List of spots meeting criteria with their statistics
@@ -243,8 +243,8 @@ class SpotService:
         # Apply sustained wind filter if threshold is set
         if sustained_wind_min > 0 and sustained_percentages:
             df["sustained_pct"] = df["spot_id"].map(sustained_percentages).fillna(0)
-            # Filter spots where sustained wind percentage meets the threshold
-            df = df[df["sustained_pct"] >= min_percentage]
+            # Filter spots where sustained wind percentage meets the days threshold
+            df = df[df["sustained_pct"] >= sustained_wind_days_min]
             df = df.drop(columns=["sustained_pct"])
 
         # Sort by kiteable percentage

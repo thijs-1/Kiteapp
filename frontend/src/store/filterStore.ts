@@ -10,6 +10,7 @@ interface FilterState {
   spotName: string;
   minPercentage: number;
   sustainedWindMin: number;
+  sustainedWindDaysMin: number;
 
   // Actions
   setWindRange: (min: number, max: number) => void;
@@ -18,6 +19,7 @@ interface FilterState {
   setSpotName: (name: string) => void;
   setMinPercentage: (percentage: number) => void;
   setSustainedWindMin: (threshold: number) => void;
+  setSustainedWindDaysMin: (percentage: number) => void;
   resetFilters: () => void;
 }
 
@@ -30,6 +32,7 @@ const defaultFilters = {
   spotName: '',
   minPercentage: 75,
   sustainedWindMin: 0,
+  sustainedWindDaysMin: 50,
 };
 
 export const useFilterStore = create<FilterState>((set) => ({
@@ -46,6 +49,8 @@ export const useFilterStore = create<FilterState>((set) => ({
   setMinPercentage: (percentage) => set({ minPercentage: percentage }),
 
   setSustainedWindMin: (threshold) => set({ sustainedWindMin: threshold }),
+
+  setSustainedWindDaysMin: (percentage) => set({ sustainedWindDaysMin: percentage }),
 
   resetFilters: () => set(defaultFilters),
 }));

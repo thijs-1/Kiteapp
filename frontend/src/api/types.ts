@@ -21,6 +21,7 @@ export interface SpotFilters {
   name?: string;
   min_percentage: number;
   sustained_wind_min: number;
+  sustained_wind_days_min: number;
 }
 
 export interface HistogramData {
