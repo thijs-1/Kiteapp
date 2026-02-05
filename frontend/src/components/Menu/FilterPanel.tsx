@@ -1,4 +1,5 @@
 import { WindRangeSlider } from './WindRangeSlider';
+import { SustainedWindSlider } from './SustainedWindSlider';
 import { DateRangePicker } from './DateRangePicker';
 import { CountrySelector } from './CountrySelector';
 import { SpotSearch } from './SpotSearch';
@@ -13,6 +14,7 @@ export function FilterPanel() {
   return (
     <div className="space-y-6">
       <WindRangeSlider />
+      <SustainedWindSlider />
       <PercentageSlider />
       <DateRangePicker />
       <CountrySelector />

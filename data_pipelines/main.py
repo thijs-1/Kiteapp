@@ -26,6 +26,8 @@ from data_pipelines.config import (
     HISTOGRAMS_1D_FILE,
     HISTOGRAMS_2D_DIR,
     RAW_DATA_DIR,
+    SUSTAINED_WIND_FILE,
+    SUSTAINED_WIND_HOURS,
     TIMESERIES_DIR,
     WIND_BINS,
     DAYS_OF_YEAR,
@@ -36,6 +38,7 @@ from data_pipelines.services.arco_service import ARCOService
 from data_pipelines.services.wind_processor import WindProcessor
 from data_pipelines.services.checkpoint_service import CheckpointService
 from data_pipelines.services.histogram_builder import HistogramBuilder
+from data_pipelines.services.sustained_wind_builder import SustainedWindBuilder
 from data_pipelines.services.timeseries_store import TimeseriesStore
 from data_pipelines.utils.file_utils import save_pickle
 
@@ -69,6 +72,7 @@ class PipelineOrchestrator:
             print("Using CDS API (Copernicus) - may have queue wait times")
         self.wind_processor = WindProcessor()
         self.histogram_builder = HistogramBuilder()
+        self.sustained_wind_builder = SustainedWindBuilder()
         self.timeseries_store = TimeseriesStore()
 
         self.skip_existing_downloads = skip_existing_downloads
@@ -84,6 +88,10 @@ class PipelineOrchestrator:
         self._histogram_1d_data: Dict[str, np.ndarray] = {}
         self._day_to_idx = {day: idx for idx, day in enumerate(DAYS_OF_YEAR)}
         self._num_bins = len(WIND_BINS) - 1
+
+        # Accumulator for sustained wind data
+        # spot_id -> {day: max_sustained_value}
+        self._sustained_wind_data: Dict[str, Dict[str, float]] = {}
 
         # Spot coordinate lookup for daylight filtering
         # Built lazily on first access
@@ -396,6 +404,52 @@ class PipelineOrchestrator:
         save_pickle(result, HISTOGRAMS_1D_FILE)
         print(f"Saved 1D histograms: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {self._num_bins} bins")
 
+    def add_sustained_wind(self, spot_id: str, sustained_wind) -> None:
+        """Add sustained wind percentage data to accumulator."""
+        self._sustained_wind_data[spot_id] = sustained_wind.daily_percentages
+
+    def save_all_sustained_wind(self) -> None:
+        """Save all accumulated sustained wind percentage data as a single file."""
+        if not self._sustained_wind_data:
+            print("No sustained wind data to save.")
+            return
+
+        spot_ids = list(self._sustained_wind_data.keys())
+        num_spots = len(spot_ids)
+
+        # Create a 3D array: (num_spots, 366 days, num_bins)
+        # Each bin contains the percentage of days with sustained wind in that range
+        data = np.zeros((num_spots, len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
+        for i, spot_id in enumerate(spot_ids):
+            daily_data = self._sustained_wind_data[spot_id]
+            for day, percentages in daily_data.items():
+                if day in self._day_to_idx:
+                    data[i, self._day_to_idx[day]] = percentages
+
+        result = {
+            "spot_ids": spot_ids,
+            "sustained_hours": SUSTAINED_WIND_HOURS,
+            "bins": WIND_BINS,
+            "days": DAYS_OF_YEAR,
+            "data": data,  # Percentages per bin (each day sums to 100)
+        }
+
+        save_pickle(result, SUSTAINED_WIND_FILE)
+        print(f"Saved sustained wind: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {self._num_bins} bins ({SUSTAINED_WIND_HOURS}h sustained)")
+
+    def load_existing_sustained_wind(self) -> None:
+        """Load existing sustained wind percentage data if available."""
+        if SUSTAINED_WIND_FILE.exists() and self.skip_existing_histograms:
+            import pickle
+            with open(SUSTAINED_WIND_FILE, "rb") as f:
+                existing = pickle.load(f)
+            for i, spot_id in enumerate(existing["spot_ids"]):
+                daily_data = {}
+                for j, day in enumerate(existing["days"]):
+                    daily_data[day] = existing["data"][i, j]
+                self._sustained_wind_data[spot_id] = daily_data
+            print(f"Loaded {len(self._sustained_wind_data)} existing sustained wind records")
+
     def load_existing_1d_histograms(self) -> None:
         """Load existing 1D histogram data if available."""
         if HISTOGRAMS_1D_FILE.exists() and self.skip_existing_histograms:
@@ -408,17 +462,18 @@ class PipelineOrchestrator:
 
     def run_phase2(self) -> dict:
         """
-        Phase 2: Build histograms from extracted time series.
+        Phase 2: Build histograms and sustained wind data from extracted time series.
 
         Returns:
             Dict with statistics
         """
         print("\n" + "=" * 60)
-        print("PHASE 2: Build Histograms from Time Series")
+        print("PHASE 2: Build Histograms and Sustained Wind from Time Series")
         print("=" * 60)
 
-        # Load existing histograms if skipping
+        # Load existing data if skipping
         self.load_existing_1d_histograms()
+        self.load_existing_sustained_wind()
 
         spot_ids = self.timeseries_store.get_all_spot_ids()
         print(f"Found {len(spot_ids)} spots with time series data")
@@ -431,6 +486,8 @@ class PipelineOrchestrator:
             spot_coords = {}
             print("Daylight filtering disabled: including all hours")
 
+        print(f"Sustained wind: computing max wind sustained for {SUSTAINED_WIND_HOURS}+ hours")
+
         stats = {
             "spots_total": len(spot_ids),
             "spots_processed": 0,
@@ -441,8 +498,9 @@ class PipelineOrchestrator:
             # Check if already processed
             has_1d = spot_id in self._histogram_1d_data
             has_2d = self.histogram_2d_exists(spot_id)
+            has_sustained = spot_id in self._sustained_wind_data
 
-            if self.skip_existing_histograms and has_1d and has_2d:
+            if self.skip_existing_histograms and has_1d and has_2d and has_sustained:
                 stats["spots_skipped"] += 1
                 continue
 
@@ -464,17 +522,30 @@ class PipelineOrchestrator:
                 longitude=longitude,
             )
 
+            # Build sustained wind data
+            sustained_wind = self.sustained_wind_builder.build_daily_sustained_wind(
+                spot_id,
+                data["time"],
+                data["strength"],
+                latitude=latitude,
+                longitude=longitude,
+            )
+
             # Save
             if not has_1d:
                 self.add_histogram_1d(spot_id, hist_1d)
             if not has_2d:
                 self.save_histogram_2d(spot_id, hist_2d)
+            if not has_sustained:
+                self.add_sustained_wind(spot_id, sustained_wind)
 
             stats["spots_processed"] += 1
 
-        # Save combined 1D histograms
+        # Save combined data
         print("\nSaving combined 1D histogram data...")
         self.save_all_1d_histograms()
+        print("Saving combined sustained wind data...")
+        self.save_all_sustained_wind()
 
         print(f"\nPhase 2 complete!")
         print(f"  Spots processed: {stats['spots_processed']}")
@@ -492,6 +563,7 @@ class PipelineOrchestrator:
 
         cells_with_spots = self.grid_service.get_cells_with_spots()
         self.load_existing_1d_histograms()
+        self.load_existing_sustained_wind()
 
         if max_cells:
             cells_with_spots = cells_with_spots[:max_cells]
@@ -500,6 +572,8 @@ class PipelineOrchestrator:
             print("Daylight filtering enabled: only including daytime hours in histograms")
         else:
             print("Daylight filtering disabled: including all hours")
+
+        print(f"Sustained wind: computing max wind sustained for {SUSTAINED_WIND_HOURS}+ hours")
 
         stats = {
             "cells_processed": 0,
@@ -521,8 +595,9 @@ class PipelineOrchestrator:
             for spot in cell.spots:
                 has_1d = spot.spot_id in self._histogram_1d_data
                 has_2d = self.histogram_2d_exists(spot.spot_id)
+                has_sustained = spot.spot_id in self._sustained_wind_data
 
-                if self.skip_existing_histograms and has_1d and has_2d:
+                if self.skip_existing_histograms and has_1d and has_2d and has_sustained:
                     stats["spots_skipped"] += 1
                     continue
 
@@ -540,10 +615,21 @@ class PipelineOrchestrator:
                     longitude=spot.longitude,
                 )
 
+                # Build sustained wind data
+                sustained_wind = self.sustained_wind_builder.build_daily_sustained_wind(
+                    spot.spot_id,
+                    wind_data["time"],
+                    wind_data["strength"],
+                    latitude=spot.latitude,
+                    longitude=spot.longitude,
+                )
+
                 if not has_1d:
                     self.add_histogram_1d(spot.spot_id, hist_1d)
                 if not has_2d:
                     self.save_histogram_2d(spot.spot_id, hist_2d)
+                if not has_sustained:
+                    self.add_sustained_wind(spot.spot_id, sustained_wind)
 
                 stats["spots_processed"] += 1
 
@@ -555,6 +641,7 @@ class PipelineOrchestrator:
                     f.unlink()
 
         self.save_all_1d_histograms()
+        self.save_all_sustained_wind()
         return stats
 
     # =========================================================================

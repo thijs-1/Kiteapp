@@ -1,15 +1,26 @@
 """FastAPI application entry point."""
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
 from backend.api.routes import spots, histograms, windrose
+from backend.api.dependencies import get_histogram_repository
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Preload data on startup."""
+    get_histogram_repository().preload()
+    yield
 
 # Create FastAPI app
 app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
     redirect_slashes=False,
+    lifespan=lifespan,
 )
 
 # Add CORS middleware

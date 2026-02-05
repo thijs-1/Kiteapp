@@ -14,10 +14,12 @@ class HistogramRepository:
         self,
         histograms_1d_file: Path = None,
         histograms_2d_dir: Path = None,
+        sustained_wind_file: Path = None,
     ):
         """Initialize repository with paths to histogram data."""
         self.histograms_1d_file = histograms_1d_file or settings.histograms_1d_file
         self.histograms_2d_dir = histograms_2d_dir or settings.histograms_2d_dir
+        self.sustained_wind_file = sustained_wind_file or settings.sustained_wind_file
 
         # 1D histogram data (loaded lazily)
         self._1d_loaded = False
@@ -28,8 +30,21 @@ class HistogramRepository:
         self._1d_days: List[str] = []
         self._1d_day_to_idx: Dict[str, int] = {}
 
+        # Sustained wind data (loaded lazily)
+        self._sustained_loaded = False
+        self._sustained_data: Optional[np.ndarray] = None  # Shape: (num_spots, 366, num_bins)
+        self._sustained_spot_ids: List[str] = []
+        self._sustained_spot_to_idx: Dict[str, int] = {}
+        self._sustained_bins: List[float] = []
+        self._sustained_hours: int = 2
+
         # Cache for 2D histograms (per-spot, loaded on demand)
         self._cache_2d: Dict[str, Dict[str, Any]] = {}
+
+    def preload(self) -> None:
+        """Preload all filter data (1D histograms and sustained wind) on startup."""
+        self._load_1d_data()
+        self._load_sustained_data()
 
     def _load_1d_data(self) -> None:
         """Load the 1D histogram 3D array."""
@@ -50,6 +65,25 @@ class HistogramRepository:
         self._1d_days = data["days"]
         self._1d_day_to_idx = {day: idx for idx, day in enumerate(self._1d_days)}
         self._1d_loaded = True
+
+    def _load_sustained_data(self) -> None:
+        """Load the sustained wind 3D array."""
+        if self._sustained_loaded:
+            return
+
+        if not self.sustained_wind_file.exists():
+            self._sustained_loaded = True
+            return
+
+        with open(self.sustained_wind_file, "rb") as f:
+            data = pickle.load(f)
+
+        self._sustained_data = data["data"]
+        self._sustained_spot_ids = data["spot_ids"]
+        self._sustained_spot_to_idx = {sid: idx for idx, sid in enumerate(self._sustained_spot_ids)}
+        self._sustained_bins = data["bins"]
+        self._sustained_hours = data.get("sustained_hours", 2)
+        self._sustained_loaded = True
 
     def _load_pickle(self, file_path: Path) -> Optional[Dict[str, Any]]:
         """Load a pickle file."""
@@ -182,3 +216,39 @@ class HistogramRepository:
     def clear_cache(self) -> None:
         """Clear the 2D histogram cache."""
         self._cache_2d.clear()
+
+    # --- Sustained Wind Access ---
+
+    def get_sustained_data(self) -> Optional[np.ndarray]:
+        """Get the full sustained wind 3D array. Shape: (num_spots, 366, num_bins)"""
+        self._load_sustained_data()
+        return self._sustained_data
+
+    def get_sustained_spot_ids(self) -> List[str]:
+        """Get list of spot IDs in the same order as the sustained wind array."""
+        self._load_sustained_data()
+        return self._sustained_spot_ids
+
+    def get_sustained_bins(self) -> List[float]:
+        """Get wind speed bin edges for sustained wind data."""
+        self._load_sustained_data()
+        return self._sustained_bins
+
+    def get_sustained_spot_index(self, spot_id: str) -> Optional[int]:
+        """Get array index for a spot ID in sustained wind data."""
+        self._load_sustained_data()
+        return self._sustained_spot_to_idx.get(spot_id)
+
+    def get_sustained_bin_index(self, wind_threshold: float) -> int:
+        """
+        Get the bin index for a wind threshold.
+
+        Returns the index of the first bin where bin_low >= threshold.
+        To get % of days with sustained wind >= threshold, sum percentages from this index onwards.
+        """
+        self._load_sustained_data()
+        bins = self._sustained_bins
+        for i, bin_low in enumerate(bins[:-1]):
+            if bin_low >= wind_threshold:
+                return i
+        return len(bins) - 2  # Last valid bin index
