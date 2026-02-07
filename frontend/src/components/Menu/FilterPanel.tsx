@@ -4,18 +4,20 @@ import { DateRangePicker } from './DateRangePicker';
 import { CountrySelector } from './CountrySelector';
 import { SpotSearch } from './SpotSearch';
 import { PercentageSlider } from './PercentageSlider';
+import { WindModeToggle } from './WindModeToggle';
 import { useFilterStore } from '../../store/filterStore';
 import { useSpotStore } from '../../store/spotStore';
 
 export function FilterPanel() {
   const resetFilters = useFilterStore((state) => state.resetFilters);
+  const windMode = useFilterStore((state) => state.windMode);
   const { spots, isLoading } = useSpotStore();
 
   return (
     <div className="space-y-6">
       <WindRangeSlider />
-      <PercentageSlider />
-      <SustainedWindSlider />
+      <WindModeToggle />
+      {windMode === 'hourly' ? <PercentageSlider /> : <SustainedWindSlider />}
       <DateRangePicker />
       <CountrySelector />
       <SpotSearch />

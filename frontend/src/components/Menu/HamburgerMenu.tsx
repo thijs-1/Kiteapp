@@ -69,7 +69,7 @@ export function HamburgerMenu() {
           isOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
       >
-        <div className="p-4 pt-16">
+        <div className="h-full overflow-y-auto p-4 pt-16 pb-8">
           <h2 className="text-xl font-bold mb-4 text-gray-800">Filters</h2>
           <FilterPanel />
         </div>
