@@ -147,7 +147,12 @@ class DaylightService:
         if timestamp_utc.tzinfo is None:
             timestamp_utc = timestamp_utc.replace(tzinfo=timezone.utc)
 
-        return sunrise <= timestamp_utc <= sunset
+        if sunrise <= sunset:
+            return sunrise <= timestamp_utc <= sunset
+        else:
+            # Daylight spans UTC midnight (e.g. eastern longitudes where dawn
+            # in UTC falls before midnight of the requested date)
+            return timestamp_utc >= sunrise or timestamp_utc <= sunset
 
     def create_daylight_mask(
         self,
@@ -200,7 +205,11 @@ class DaylightService:
             sunset = sunset_lookup.get(date)
 
             if sunrise is not None and sunset is not None:
-                mask[i] = (ts >= sunrise) and (ts <= sunset)
+                if sunrise <= sunset:
+                    mask[i] = (ts >= sunrise) and (ts <= sunset)
+                else:
+                    # Daylight spans UTC midnight
+                    mask[i] = (ts >= sunrise) or (ts <= sunset)
 
         return mask
 

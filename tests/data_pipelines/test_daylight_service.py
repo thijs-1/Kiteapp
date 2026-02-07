@@ -300,3 +300,92 @@ class TestDaylightServiceEdgeCases:
         # Both noon timestamps should be during daylight
         assert mask[0] == True
         assert mask[1] == True
+
+    def test_eastern_longitude_dawn_crosses_utc_midnight(self):
+        """Test that daylight filtering works when dawn falls before UTC midnight.
+
+        For eastern longitudes (e.g. Sri Lanka east coast at ~82°E), civil dawn
+        in UTC can fall just before midnight. The astral library places this dawn
+        at the END of the UTC date (23:53) instead of the beginning, making
+        dawn > dusk. The filter must handle this correctly.
+        """
+        service = DaylightService(filter_enabled=True, depression_angle=6)
+
+        # Arugam Bay, Sri Lanka (6.84°N, 81.83°E) in May
+        # Dawn ~23:53 UTC (05:23 local), Dusk ~13:04 UTC (18:34 local)
+        latitude = 6.84
+        longitude = 81.83
+
+        # Hourly timestamps for one UTC day in May
+        timestamps = np.array([
+            np.datetime64(f"2024-05-15T{h:02d}:00:00") for h in range(24)
+        ])
+
+        mask = service.create_daylight_mask(latitude, longitude, timestamps)
+
+        # Should have ~13-14 daylight hours, NOT 0
+        assert mask.sum() > 10, (
+            f"Expected >10 daylight hours for Sri Lanka in May, got {mask.sum()}. "
+            f"Dawn/dusk UTC midnight crossing likely not handled."
+        )
+
+        # Morning hours (00:00-12:00 UTC = 05:30-17:30 local) should be daylight
+        assert mask[6] == True   # 06:00 UTC = 11:30 local
+        assert mask[12] == True  # 12:00 UTC = 17:30 local
+
+        # Late afternoon/night (15:00+ UTC = 20:30+ local) should be dark
+        assert mask[15] == False  # 15:00 UTC = 20:30 local
+        assert mask[20] == False  # 20:00 UTC = 01:30 local next day
+
+    def test_western_longitude_dusk_crosses_utc_midnight(self):
+        """Test that daylight filtering works for western hemisphere locations.
+
+        For western longitudes (e.g. Hawaii at ~-155°), dusk in UTC can fall
+        just after midnight (early hours), creating the same dawn > dusk
+        inversion but from the dusk side.
+        """
+        service = DaylightService(filter_enabled=True, depression_angle=6)
+
+        # Hawaii (~20°N, -155°W) in May
+        # Dawn ~15:16 UTC (05:16 local), Dusk ~05:17 UTC (19:17 local prev day)
+        latitude = 20.0
+        longitude = -155.0
+
+        timestamps = np.array([
+            np.datetime64(f"2024-05-25T{h:02d}:00:00") for h in range(24)
+        ])
+
+        mask = service.create_daylight_mask(latitude, longitude, timestamps)
+
+        # Should have ~13-14 daylight hours, NOT 0
+        assert mask.sum() > 10, (
+            f"Expected >10 daylight hours for Hawaii in May, got {mask.sum()}. "
+            f"Dawn/dusk UTC midnight crossing likely not handled."
+        )
+
+        # Early UTC hours (00:00-05:00 = 14:00-19:00 local prev day) should be daylight
+        assert mask[0] == True   # 00:00 UTC = 14:00 HST
+        assert mask[4] == True   # 04:00 UTC = 18:00 HST
+
+        # Mid UTC hours (07:00-14:00 = 21:00-04:00 local) should be dark
+        assert mask[8] == False   # 08:00 UTC = 22:00 HST
+        assert mask[14] == False  # 14:00 UTC = 04:00 HST
+
+        # Late UTC hours (16:00-23:00 = 06:00-13:00 local) should be daylight
+        assert mask[16] == True  # 16:00 UTC = 06:00 HST
+        assert mask[23] == True  # 23:00 UTC = 13:00 HST
+
+    def test_is_daylight_eastern_longitude_midnight_crossing(self):
+        """Test is_daylight works for locations where dawn crosses UTC midnight."""
+        service = DaylightService(filter_enabled=True, depression_angle=6)
+
+        latitude = 6.84   # Arugam Bay
+        longitude = 81.83
+
+        # 06:00 UTC = 11:30 local -> definitely daylight
+        ts_day = datetime(2024, 5, 15, 6, 0, tzinfo=timezone.utc)
+        assert service.is_daylight(latitude, longitude, ts_day) is True
+
+        # 18:00 UTC = 23:30 local -> definitely night
+        ts_night = datetime(2024, 5, 15, 18, 0, tzinfo=timezone.utc)
+        assert service.is_daylight(latitude, longitude, ts_night) is False
