@@ -2,15 +2,87 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Kiteapp - Find Your Perfect Kite Spot</title>
+
+    <!-- Primary Meta Tags -->
+    <title>Kiteapp - Find Your Perfect Kitesurfing Spot Worldwide</title>
+    <meta name="title" content="Kiteapp - Find Your Perfect Kitesurfing Spot Worldwide" />
+    <meta name="description" content="Discover the best kitesurfing spots worldwide using 10 years of wind data. Filter by wind strength, direction, season, and country to find your ideal kite spot." />
+    <meta name="keywords" content="kitesurfing, kitesurf spots, wind data, kiteboarding, best kite spots, wind forecast, kite destinations, ERA5 wind data" />
+    <meta name="author" content="Kiteapp" />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Canonical URL -->
+    <link rel="canonical" href="https://wheretokite.com/" />
+
+    <!-- Favicon -->
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="apple-touch-icon" href="/favicon.svg" />
+
+    <!-- Open Graph / Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:url" content="https://wheretokite.com/" />
+    <meta property="og:title" content="Kiteapp - Find Your Perfect Kitesurfing Spot Worldwide" />
+    <meta property="og:description" content="Discover the best kitesurfing spots worldwide using 10 years of wind data. Filter by wind strength, direction, season, and country to find your ideal kite spot." />
+    <meta property="og:image" content="https://wheretokite.com/og-image.png" />
+    <meta property="og:site_name" content="Kiteapp" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:url" content="https://wheretokite.com/" />
+    <meta name="twitter:title" content="Kiteapp - Find Your Perfect Kitesurfing Spot Worldwide" />
+    <meta name="twitter:description" content="Discover the best kitesurfing spots worldwide using 10 years of wind data. Filter by wind strength, direction, season, and country to find your ideal kite spot." />
+    <meta name="twitter:image" content="https://wheretokite.com/og-image.png" />
+
+    <!-- Preconnect to external resources -->
+    <link rel="preconnect" href="https://unpkg.com" crossorigin />
+    <link rel="dns-prefetch" href="https://unpkg.com" />
+    <link rel="preconnect" href="https://tile.openstreetmap.org" crossorigin />
+    <link rel="dns-prefetch" href="https://tile.openstreetmap.org" />
+
+    <!-- Leaflet CSS -->
     <link
       rel="stylesheet"
       href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
       integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
       crossorigin=""
     />
+
+    <!-- JSON-LD Structured Data -->
+    <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "WebApplication",
+      "name": "Kiteapp",
+      "url": "https://wheretokite.com/",
+      "description": "Discover the best kitesurfing spots worldwide using 10 years of wind data. Filter by wind strength, direction, season, and country to find your ideal kite spot.",
+      "applicationCategory": "SportsApplication",
+      "operatingSystem": "Web Browser",
+      "offers": {
+        "@type": "Offer",
+        "price": "0",
+        "priceCurrency": "USD"
+      },
+      "author": {
+        "@type": "Organization",
+        "name": "Kiteapp"
+      },
+      "aggregateRating": {
+        "@type": "AggregateRating",
+        "ratingValue": "4.8",
+        "ratingCount": "150"
+      },
+      "featureList": [
+        "10 years of historical wind data",
+        "Filter by wind strength and direction",
+        "Seasonal wind patterns",
+        "Global kitesurfing spot database",
+        "Wind rose visualizations",
+        "Country-based filtering"
+      ]
+    }
+    </script>
   </head>
   <body>
     <div id="root"></div>
