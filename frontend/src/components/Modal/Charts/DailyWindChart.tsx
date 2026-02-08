@@ -22,6 +22,18 @@ interface Props {
   spotId: string;
 }
 
+const SHORT_MONTHS = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+];
+
+function formatDateRange(first: string, last: string): string {
+  // Dates are YYYY-MM-DD; display as "Jan 1 - Dec 31"
+  const [, sm, sd] = first.split('-').map(Number);
+  const [, em, ed] = last.split('-').map(Number);
+  return `${SHORT_MONTHS[sm - 1]} ${sd} – ${SHORT_MONTHS[em - 1]} ${ed}`;
+}
+
 function formatHour(h: number): string {
   const hours = Math.floor(h);
   const minutes = Math.round((h - hours) * 60);
@@ -114,7 +126,7 @@ export function DailyWindChart({ spotId }: Props) {
   return (
     <div className="h-full flex flex-col">
       <div className="text-xs text-gray-500 text-center pb-1">
-        {data.profiles.length} days overlaid
+        {formatDateRange(data.profiles[0].date, data.profiles[data.profiles.length - 1].date)}
       </div>
       <div className="flex-1 min-h-0">
         <Scatter data={{ datasets }} options={options} />
