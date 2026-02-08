@@ -1,101 +1,74 @@
 import { useFilterStore } from '../../store/filterStore';
 
-// Month names for dropdown
 const MONTHS = [
-  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
-  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+  { value: 1, label: 'January' },
+  { value: 2, label: 'February' },
+  { value: 3, label: 'March' },
+  { value: 4, label: 'April' },
+  { value: 5, label: 'May' },
+  { value: 6, label: 'June' },
+  { value: 7, label: 'July' },
+  { value: 8, label: 'August' },
+  { value: 9, label: 'September' },
+  { value: 10, label: 'October' },
+  { value: 11, label: 'November' },
+  { value: 12, label: 'December' },
 ];
 
-// Days 1-31
-const DAYS = Array.from({ length: 31 }, (_, i) => i + 1);
+const MONTH_LAST_DAY = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
 
 export function DateRangePicker() {
   const { startDate, endDate, setDateRange } = useFilterStore();
 
-  // Parse MM-DD format
-  const parseDate = (date: string) => {
-    const [month, day] = date.split('-').map(Number);
-    return { month, day };
-  };
+  // Extract month from MM-DD format
+  const startMonth = parseInt(startDate.split('-')[0], 10);
+  const endMonth = parseInt(endDate.split('-')[0], 10);
 
-  const start = parseDate(startDate);
-  const end = parseDate(endDate);
+  const formatStart = (month: number) =>
+    `${String(month).padStart(2, '0')}-01`;
 
-  const formatDate = (month: number, day: number) => {
-    return `${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-  };
+  const formatEnd = (month: number) =>
+    `${String(month).padStart(2, '0')}-${String(MONTH_LAST_DAY[month - 1]).padStart(2, '0')}`;
 
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-700">
-        Date Range:
+        Season
       </label>
 
-      <div className="grid grid-cols-2 gap-4">
-        {/* Start date */}
+      <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1">
           <span className="text-xs text-gray-500">From</span>
-          <div className="flex gap-1">
-            <select
-              value={start.month}
-              onChange={(e) =>
-                setDateRange(formatDate(Number(e.target.value), start.day), endDate)
-              }
-              className="flex-1 px-2 py-1 border rounded text-sm"
-            >
-              {MONTHS.map((name, idx) => (
-                <option key={idx} value={idx + 1}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={start.day}
-              onChange={(e) =>
-                setDateRange(formatDate(start.month, Number(e.target.value)), endDate)
-              }
-              className="w-14 px-2 py-1 border rounded text-sm"
-            >
-              {DAYS.map((day) => (
-                <option key={day} value={day}>
-                  {day}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={startMonth}
+            onChange={(e) =>
+              setDateRange(formatStart(Number(e.target.value)), endDate)
+            }
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-kite focus:border-transparent"
+          >
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
         </div>
 
-        {/* End date */}
         <div className="space-y-1">
           <span className="text-xs text-gray-500">To</span>
-          <div className="flex gap-1">
-            <select
-              value={end.month}
-              onChange={(e) =>
-                setDateRange(startDate, formatDate(Number(e.target.value), end.day))
-              }
-              className="flex-1 px-2 py-1 border rounded text-sm"
-            >
-              {MONTHS.map((name, idx) => (
-                <option key={idx} value={idx + 1}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            <select
-              value={end.day}
-              onChange={(e) =>
-                setDateRange(startDate, formatDate(end.month, Number(e.target.value)))
-              }
-              className="w-14 px-2 py-1 border rounded text-sm"
-            >
-              {DAYS.map((day) => (
-                <option key={day} value={day}>
-                  {day}
-                </option>
-              ))}
-            </select>
-          </div>
+          <select
+            value={endMonth}
+            onChange={(e) =>
+              setDateRange(startDate, formatEnd(Number(e.target.value)))
+            }
+            className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-kite focus:border-transparent"
+          >
+            {MONTHS.map((m) => (
+              <option key={m.value} value={m.value}>
+                {m.label}
+              </option>
+            ))}
+          </select>
         </div>
       </div>
     </div>

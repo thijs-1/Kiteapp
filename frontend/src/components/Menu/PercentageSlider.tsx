@@ -23,7 +23,7 @@ export function PercentageSlider() {
   return (
     <div className="space-y-2">
       <label className="block text-sm font-medium text-gray-700">
-        Minimum Kiteable Hours %
+        Wind Reliability
       </label>
       <div className="px-2 pb-6">
         <Slider
@@ -44,7 +44,7 @@ export function PercentageSlider() {
         />
       </div>
       <div className="text-xs text-gray-500 text-center">
-        At least {localValue}% of time with good wind
+        At least {localValue}% of hours within wind range
       </div>
     </div>
   );

@@ -15,11 +15,7 @@ export function useFilteredSpots() {
         wind_max: filters.windMax,
         start_date: filters.startDate,
         end_date: filters.endDate,
-        country: filters.country || undefined,
-        name: filters.spotName || undefined,
         min_percentage: filters.minPercentage,
-        sustained_wind_min: filters.sustainedWindMin,
-        sustained_wind_days_min: filters.sustainedWindDaysMin,
       });
       setSpots(data);
       setLoading(false);
@@ -31,11 +27,7 @@ export function useFilteredSpots() {
     filters.windMax,
     filters.startDate,
     filters.endDate,
-    filters.country,
-    filters.spotName,
     filters.minPercentage,
-    filters.sustainedWindMin,
-    filters.sustainedWindDaysMin,
     setSpots,
     setLoading,
     setError,
