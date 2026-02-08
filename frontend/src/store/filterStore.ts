@@ -16,11 +16,11 @@ interface FilterState {
 }
 
 export const defaultFilters = {
-  windMin: 0,
+  windMin: 15,
   windMax: 100, // 100 represents infinity
   startDate: '01-01',
   endDate: '12-31',
-  minPercentage: 75,
+  minPercentage: 50,
 };
 
 export const useFilterStore = create<FilterState>((set) => ({
