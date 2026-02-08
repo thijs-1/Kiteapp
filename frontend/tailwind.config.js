@@ -7,8 +7,9 @@ export default {
   theme: {
     extend: {
       colors: {
-        'kite-pink': '#FF69B4',
-        'kite-pink-dark': '#FF1493',
+        'kite': '#0891B2',
+        'kite-dark': '#0E7490',
+        'kite-accent': '#F97316',
       },
       animation: {
         'fade-in': 'fadeIn 0.3s ease-out',

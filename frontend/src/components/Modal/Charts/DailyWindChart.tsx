@@ -34,7 +34,7 @@ export function DailyWindChart({ spotId }: Props) {
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite-pink" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
       </div>
     );
   }
@@ -53,7 +53,7 @@ export function DailyWindChart({ spotId }: Props) {
     label: profile.date,
     data: profile.hours.map((h, i) => ({ x: h, y: profile.strength[i] })),
     showLine: true,
-    borderColor: `rgba(200, 40, 120, ${lineOpacity})`,
+    borderColor: `rgba(8, 145, 178, ${lineOpacity})`,
     borderWidth: 1.5,
     pointRadius: 0,
     pointHoverRadius: 0,

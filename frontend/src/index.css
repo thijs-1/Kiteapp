@@ -19,12 +19,12 @@
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb {
-  background: #FF69B4;
+  background: #0891B2;
   border-radius: 3px;
 }
 
 .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-  background: #FF1493;
+  background: #0E7490;
 }
 
 /* RC Slider customization */
@@ -58,6 +58,6 @@
   }
 
   .rc-slider-handle:active {
-    box-shadow: 0 0 0 4px rgba(255, 105, 180, 0.2) !important;
+    box-shadow: 0 0 0 4px rgba(8, 145, 178, 0.2) !important;
   }
 }

@@ -168,7 +168,7 @@ export function Carousel({ spotId }: CarouselProps) {
           >
             <span
               className={`w-3 h-3 rounded-full transition-colors ${
-                index === activeIndex ? 'bg-kite-pink' : 'bg-gray-300'
+                index === activeIndex ? 'bg-kite' : 'bg-gray-300'
               }`}
             />
           </button>

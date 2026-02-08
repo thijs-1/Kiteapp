@@ -34,7 +34,7 @@ export function FilterPanel() {
           'Loading...'
         ) : (
           <>
-            <span className="font-semibold text-kite-pink">{spots.length}</span> spots
+            <span className="font-semibold text-kite">{spots.length}</span> spots
             found
           </>
         )}

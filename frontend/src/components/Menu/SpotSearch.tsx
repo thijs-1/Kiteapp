@@ -23,7 +23,7 @@ export function SpotSearch() {
           value={inputValue}
           onChange={(e) => setInputValue(e.target.value)}
           placeholder="Search spots..."
-          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-kite-pink focus:border-transparent"
+          className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-kite focus:border-transparent"
         />
         {inputValue && (
           <button

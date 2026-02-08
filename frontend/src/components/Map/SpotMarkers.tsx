@@ -52,7 +52,7 @@ function SpotMarker({ spot, onSelect, isMobile }: SpotMarkerProps) {
     <div className="text-sm">
       <div className="font-bold">{spot.name}</div>
       <div className="text-gray-600">{spot.country}</div>
-      <div className="text-kite-pink font-semibold">
+      <div className="text-kite font-semibold">
         {spot.kiteable_percentage.toFixed(0)}% kiteable
       </div>
     </div>
@@ -66,8 +66,8 @@ function SpotMarker({ spot, onSelect, isMobile }: SpotMarkerProps) {
       center={[spot.latitude, spot.longitude]}
       radius={markerRadius}
       pathOptions={{
-        color: '#FF1493',
-        fillColor: '#FF69B4',
+        color: '#EA580C',
+        fillColor: '#F97316',
         fillOpacity: isMobile ? 0.6 : 0.8,
         weight: isMobile ? 2 : 1,
       }}

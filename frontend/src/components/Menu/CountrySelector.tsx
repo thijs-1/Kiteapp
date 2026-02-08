@@ -27,7 +27,7 @@ export function CountrySelector() {
       <select
         value={country || ''}
         onChange={(e) => setCountry(e.target.value || null)}
-        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-kite-pink focus:border-transparent"
+        className="w-full px-3 py-2 border rounded-lg text-sm focus:ring-2 focus:ring-kite focus:border-transparent"
         disabled={isLoading}
       >
         <option value="">All Countries</option>

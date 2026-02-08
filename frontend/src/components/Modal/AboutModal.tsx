@@ -78,7 +78,7 @@ export function AboutModal() {
 
             {/* Content */}
             <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
-              <div className="prose prose-sm sm:prose max-w-none prose-headings:text-gray-800 prose-p:text-gray-600 prose-a:text-kite-pink prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-700 prose-li:text-gray-600">
+              <div className="prose prose-sm sm:prose max-w-none prose-headings:text-gray-800 prose-p:text-gray-600 prose-a:text-kite prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-700 prose-li:text-gray-600">
                 <ReactMarkdown>{aboutContent}</ReactMarkdown>
               </div>
             </div>

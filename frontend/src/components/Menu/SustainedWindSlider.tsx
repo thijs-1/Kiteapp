@@ -63,8 +63,8 @@ export function SustainedWindSlider() {
               }
             }}
             marks={WIND_MARKS}
-            trackStyle={{ backgroundColor: '#FF69B4' }}
-            handleStyle={{ borderColor: '#FF69B4', backgroundColor: 'white' }}
+            trackStyle={{ backgroundColor: '#0891B2' }}
+            handleStyle={{ borderColor: '#0891B2', backgroundColor: 'white' }}
             railStyle={{ backgroundColor: '#E5E7EB' }}
           />
         </div>
@@ -87,8 +87,8 @@ export function SustainedWindSlider() {
                 }
               }}
               marks={PERCENTAGE_MARKS}
-              trackStyle={{ backgroundColor: '#FF69B4' }}
-              handleStyle={{ borderColor: '#FF69B4', backgroundColor: 'white' }}
+              trackStyle={{ backgroundColor: '#0891B2' }}
+              handleStyle={{ borderColor: '#0891B2', backgroundColor: 'white' }}
               railStyle={{ backgroundColor: '#E5E7EB' }}
             />
           </div>

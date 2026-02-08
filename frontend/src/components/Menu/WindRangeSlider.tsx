@@ -49,10 +49,10 @@ export function WindRangeSlider() {
             }
           }}
           marks={WIND_MARKS}
-          trackStyle={[{ backgroundColor: '#FF69B4' }]}
+          trackStyle={[{ backgroundColor: '#0891B2' }]}
           handleStyle={[
-            { borderColor: '#FF69B4', backgroundColor: 'white' },
-            { borderColor: '#FF69B4', backgroundColor: 'white' },
+            { borderColor: '#0891B2', backgroundColor: 'white' },
+            { borderColor: '#0891B2', backgroundColor: 'white' },
           ]}
           railStyle={{ backgroundColor: '#E5E7EB' }}
         />

@@ -55,7 +55,7 @@ export function KiteableLineChart({ spotId }: Props) {
   if (isLoading) {
     return (
       <div className="h-full flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite-pink" />
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
       </div>
     );
   }
@@ -85,8 +85,8 @@ export function KiteableLineChart({ spotId }: Props) {
       {
         label: 'Kiteable %',
         data: percentages,
-        borderColor: '#FF69B4',
-        backgroundColor: 'rgba(255, 105, 180, 0.1)',
+        borderColor: '#0891B2',
+        backgroundColor: 'rgba(8, 145, 178, 0.1)',
         fill: true,
         tension: 0.3,
         pointRadius: 0,
@@ -171,10 +171,10 @@ export function KiteableLineChart({ spotId }: Props) {
                 setWindRange(value[0], max);
               }
             }}
-            trackStyle={[{ backgroundColor: '#FF69B4', height: 4 }]}
+            trackStyle={[{ backgroundColor: '#0891B2', height: 4 }]}
             handleStyle={[
-              { borderColor: '#FF69B4', backgroundColor: 'white', width: 12, height: 12, marginTop: -4 },
-              { borderColor: '#FF69B4', backgroundColor: 'white', width: 12, height: 12, marginTop: -4 },
+              { borderColor: '#0891B2', backgroundColor: 'white', width: 12, height: 12, marginTop: -4 },
+              { borderColor: '#0891B2', backgroundColor: 'white', width: 12, height: 12, marginTop: -4 },
             ]}
             railStyle={{ backgroundColor: '#E5E7EB', height: 4 }}
           />

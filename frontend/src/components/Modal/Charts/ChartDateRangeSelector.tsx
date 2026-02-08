@@ -311,11 +311,11 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
       {/* Selection overlay */}
       {selectionStyle && (
         <div
-          className="absolute bg-kite-pink/30 border-l-2 border-r-2 border-kite-pink pointer-events-none"
+          className="absolute bg-kite/30 border-l-2 border-r-2 border-kite pointer-events-none"
           style={selectionStyle}
         >
           {/* Selection label */}
-          <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-kite-pink text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
+          <div className="absolute top-1 left-1/2 -translate-x-1/2 bg-kite text-white text-xs px-2 py-0.5 rounded whitespace-nowrap">
             {getSelectionLabel()}
           </div>
         </div>
@@ -329,7 +329,7 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
           </span>
           <button
             onClick={handleReset}
-            className="text-xs text-kite-pink hover:text-kite-pink/80 bg-white/80 px-1.5 py-0.5 rounded hover:bg-white transition-colors"
+            className="text-xs text-kite hover:text-kite/80 bg-white/80 px-1.5 py-0.5 rounded hover:bg-white transition-colors"
             title="Reset to full year (or double-click)"
           >
             Reset

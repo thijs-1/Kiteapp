@@ -34,11 +34,11 @@ export function MenuCallout({ onDismiss }: MenuCalloutProps) {
     >
       {/* Arrow pointing left */}
       <div className="absolute left-0 top-1/2 -translate-x-full -translate-y-1/2">
-        <div className="w-0 h-0 border-t-8 border-b-8 border-r-8 border-t-transparent border-b-transparent border-r-kite-pink" />
+        <div className="w-0 h-0 border-t-8 border-b-8 border-r-8 border-t-transparent border-b-transparent border-r-kite" />
       </div>
 
       {/* Callout bubble */}
-      <div className="bg-kite-pink text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-kite-pink-dark transition-colors">
+      <div className="bg-kite text-white px-4 py-2 rounded-lg shadow-lg cursor-pointer hover:bg-kite-dark transition-colors">
         <span className="font-semibold whitespace-nowrap">Start here</span>
       </div>
     </div>
