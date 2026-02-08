@@ -6,13 +6,14 @@ import {
   Filler,
   Tooltip,
   Legend,
+  SubTitle,
   ChartOptions,
 } from 'chart.js';
 import { Radar } from 'react-chartjs-2';
 import { useWindRoseData } from '../../../hooks/useHistogram';
 import { WIND_COLORS } from '../../../utils/windColors';
 
-ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend, SubTitle);
 
 // Direction labels for 36 sectors (10 degrees each)
 // Bins are centered at 0°, 10°, 20°, ... so N=0, E=9, S=18, W=27
@@ -126,10 +127,36 @@ export function WindRose({ spotId }: Props) {
     datasets,
   };
 
+  // Plugin to balance the right legend by adding equal left padding
+  const balanceLegendPlugin = {
+    id: 'balanceLegend',
+    afterLayout(chart: ChartJS) {
+      const legendWidth = chart.legend?.width || 0;
+      if (legendWidth > 0 && chart.options.layout?.padding !== undefined) {
+        const padding = chart.options.layout.padding as { left: number };
+        if (padding.left !== legendWidth) {
+          padding.left = legendWidth;
+          chart.update('none');
+        }
+      }
+    },
+  };
+
   const options: ChartOptions<'radar'> = {
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      padding: { left: 0 },
+    },
     plugins: {
+      subtitle: {
+        display: true,
+        text: '* Wind direction shows where wind is going TO (not from)',
+        position: 'bottom' as const,
+        font: { size: 11 },
+        color: '#6b7280',
+        padding: { top: 4 },
+      },
       legend: {
         display: true,
         position: 'right' as const,
@@ -169,13 +196,8 @@ export function WindRose({ spotId }: Props) {
   };
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="flex-1 min-h-0">
-        <Radar data={chartData} options={options} />
-      </div>
-      <p className="text-xs text-gray-500 text-center mt-2">
-        * Wind direction shows where wind is going TO (not from)
-      </p>
+    <div className="h-full">
+      <Radar data={chartData} options={options} plugins={[balanceLegendPlugin]} />
     </div>
   );
 }

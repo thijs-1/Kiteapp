@@ -72,14 +72,11 @@ export function KiteableLineChart({ spotId }: Props) {
   const sortedDates = sortDatesForRange(Object.keys(data.daily_percentage), startDate, endDate);
   const percentages = sortedDates.map((date) => data.daily_percentage[date]);
 
-  // Format dates for display (show every 15th day)
-  const labels = sortedDates.map((date, idx) => {
-    if (idx % 15 === 0) {
-      const [month, day] = date.split('-');
-      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-      return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
-    }
-    return '';
+  // Format dates for display
+  const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const labels = sortedDates.map((date) => {
+    const [month, day] = date.split('-');
+    return `${monthNames[parseInt(month) - 1]} ${parseInt(day)}`;
   });
 
   const chartData = {
@@ -131,6 +128,19 @@ export function KiteableLineChart({ spotId }: Props) {
       x: {
         grid: {
           display: false,
+        },
+        ticks: {
+          autoSkip: false,
+          maxRotation: 0,
+          callback: function (_value: unknown, index: number) {
+            const total = labels.length;
+            if (total <= 7) return labels[index];
+            // Always show first and last; evenly space the rest
+            if (index === 0 || index === total - 1) return labels[index];
+            const step = Math.floor((total - 1) / 6);
+            if (index % step === 0 && index + step < total) return labels[index];
+            return null;
+          },
         },
       },
     },

@@ -1,4 +1,5 @@
 import { useRef, useState, useCallback, useEffect, ReactNode } from 'react';
+import { Chart as ChartJS } from 'chart.js';
 import { useFilterStore } from '../../../store/filterStore';
 
 interface Props {
@@ -25,24 +26,63 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
 
   const isZoomedIn = startDate !== FULL_YEAR_START || endDate !== FULL_YEAR_END;
 
-  // Chart area margins (approximate - Chart.js default padding)
-  const CHART_LEFT_MARGIN = 50;
-  const CHART_RIGHT_MARGIN = 20;
+  // Track chart area bounds for overlay positioning
+  const [overlayBounds, setOverlayBounds] = useState<{ left: number; right: number; top: number; bottom: number } | null>(null);
+
+  // Get the actual chart area from the Chart.js instance
+  const getChartArea = useCallback(() => {
+    if (!containerRef.current) return null;
+    const canvas = containerRef.current.querySelector('canvas');
+    if (!canvas) return null;
+    const chart = ChartJS.getChart(canvas);
+    if (!chart || !chart.chartArea) return null;
+    return chart.chartArea;
+  }, []);
+
+  // Update overlay bounds when chart renders or resizes
+  useEffect(() => {
+    const updateBounds = () => {
+      const area = getChartArea();
+      if (!area || !containerRef.current) return;
+      const containerHeight = containerRef.current.getBoundingClientRect().height;
+      setOverlayBounds({
+        left: area.left,
+        right: area.right,
+        top: area.top,
+        bottom: containerHeight - area.bottom,
+      });
+    };
+
+    // Initial update after chart renders
+    const timer = setTimeout(updateBounds, 100);
+
+    // Update on resize
+    const observer = new ResizeObserver(updateBounds);
+    if (containerRef.current) observer.observe(containerRef.current);
+
+    return () => {
+      clearTimeout(timer);
+      observer.disconnect();
+    };
+  }, [getChartArea, dates, startDate, endDate]);
 
   const getDateIndexFromX = useCallback(
     (clientX: number): number | null => {
       if (!containerRef.current || dates.length === 0) return null;
 
+      const chartArea = getChartArea();
+      if (!chartArea) return null;
+
       const rect = containerRef.current.getBoundingClientRect();
-      const chartWidth = rect.width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN;
-      const relativeX = clientX - rect.left - CHART_LEFT_MARGIN;
+      const relativeX = clientX - rect.left - chartArea.left;
+      const chartWidth = chartArea.right - chartArea.left;
 
       if (relativeX < 0 || relativeX > chartWidth) return null;
 
       const index = Math.round((relativeX / chartWidth) * (dates.length - 1));
       return Math.max(0, Math.min(dates.length - 1, index));
     },
-    [dates]
+    [dates, getChartArea]
   );
 
   const handleMouseDown = useCallback(
@@ -194,20 +234,22 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
       return null;
     }
 
-    const rect = containerRef.current.getBoundingClientRect();
-    const chartWidth = rect.width - CHART_LEFT_MARGIN - CHART_RIGHT_MARGIN;
+    const chartArea = getChartArea();
+    if (!chartArea) return null;
+
+    const chartWidth = chartArea.right - chartArea.left;
 
     const startIdx = Math.min(selectionStart, selectionEnd);
     const endIdx = Math.max(selectionStart, selectionEnd);
 
-    const left = CHART_LEFT_MARGIN + (startIdx / (dates.length - 1)) * chartWidth;
-    const right = CHART_LEFT_MARGIN + (endIdx / (dates.length - 1)) * chartWidth;
+    const left = chartArea.left + (startIdx / (dates.length - 1)) * chartWidth;
+    const right = chartArea.left + (endIdx / (dates.length - 1)) * chartWidth;
 
     return {
       left: `${left}px`,
       width: `${right - left}px`,
-      top: '10px',
-      bottom: '30px',
+      top: `${chartArea.top}px`,
+      bottom: `${containerRef.current.getBoundingClientRect().height - chartArea.bottom}px`,
     };
   };
 
@@ -247,11 +289,18 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
     >
       {children}
 
-      {/* Transparent overlay to capture touch/mouse events above the chart canvas */}
+      {/* Transparent overlay to capture touch/mouse events above the chart area only */}
       <div
         ref={overlayRef}
-        className="absolute inset-0"
-        style={{ cursor: disabled ? 'default' : 'crosshair', touchAction: 'none' }}
+        className="absolute"
+        style={{
+          left: overlayBounds ? `${overlayBounds.left}px` : 0,
+          top: overlayBounds ? `${overlayBounds.top}px` : 0,
+          bottom: overlayBounds ? `${overlayBounds.bottom}px` : 0,
+          width: overlayBounds ? `${overlayBounds.right - overlayBounds.left}px` : '100%',
+          cursor: disabled ? 'default' : 'crosshair',
+          touchAction: 'none',
+        }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
