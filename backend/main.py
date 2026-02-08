@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import settings
-from backend.api.routes import spots, histograms, windrose
+from backend.api.routes import spots, histograms, windrose, daily_wind
 from backend.api.dependencies import get_histogram_repository
 
 
@@ -36,6 +36,7 @@ app.add_middleware(
 app.include_router(spots.router)
 app.include_router(histograms.router)
 app.include_router(windrose.router)
+app.include_router(daily_wind.router)
 
 
 @app.get("/")

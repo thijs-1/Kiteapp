@@ -2,6 +2,7 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import { KiteableLineChart } from './Charts/KiteableLineChart';
 import { WindHistogram } from './Charts/WindHistogram';
 import { WindRose } from './Charts/WindRose';
+import { DailyWindChart } from './Charts/DailyWindChart';
 
 interface CarouselProps {
   spotId: string;
@@ -11,6 +12,7 @@ const CHART_TITLES = [
   'Kiteable Wind %',
   'Wind Strength Distribution',
   'Wind Rose',
+  'Daily Wind Profiles',
 ];
 
 // Minimum swipe distance to trigger navigation (in pixels)
@@ -49,12 +51,12 @@ export function Carousel({ spotId }: CarouselProps) {
 
   const goToPrev = useCallback(() => {
     handleButtonPress('prev');
-    setActiveIndex((prev) => (prev - 1 + 3) % 3);
+    setActiveIndex((prev) => (prev - 1 + CHART_TITLES.length) % CHART_TITLES.length);
   }, [handleButtonPress]);
 
   const goToNext = useCallback(() => {
     handleButtonPress('next');
-    setActiveIndex((prev) => (prev + 1) % 3);
+    setActiveIndex((prev) => (prev + 1) % CHART_TITLES.length);
   }, [handleButtonPress]);
 
   // Swipe gesture handlers
@@ -128,6 +130,7 @@ export function Carousel({ spotId }: CarouselProps) {
           {activeIndex === 0 && <KiteableLineChart spotId={spotId} />}
           {activeIndex === 1 && <WindHistogram spotId={spotId} />}
           {activeIndex === 2 && <WindRose spotId={spotId} />}
+          {activeIndex === 3 && <DailyWindChart spotId={spotId} />}
         </div>
 
         {/* Next button - larger touch target */}
@@ -156,7 +159,7 @@ export function Carousel({ spotId }: CarouselProps) {
 
       {/* Dot indicators - 44px touch targets with visual dot inside */}
       <div className="flex justify-center gap-1 pt-2 sm:pt-4">
-        {[0, 1, 2].map((index) => (
+        {CHART_TITLES.map((_, index) => (
           <button
             key={index}
             onClick={() => setActiveIndex(index)}

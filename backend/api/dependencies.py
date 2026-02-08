@@ -3,9 +3,11 @@ from functools import lru_cache
 
 from backend.data.spot_repository import SpotRepository
 from backend.data.histogram_repository import HistogramRepository
+from backend.data.timeseries_repository import TimeseriesRepository
 from backend.services.spot_service import SpotService
 from backend.services.histogram_service import HistogramService
 from backend.services.windrose_service import WindRoseService
+from backend.services.daily_wind_service import DailyWindService
 
 
 @lru_cache()
@@ -39,4 +41,18 @@ def get_windrose_service() -> WindRoseService:
     """Get wind rose service instance."""
     return WindRoseService(
         histogram_repo=get_histogram_repository(),
+    )
+
+
+@lru_cache()
+def get_timeseries_repository() -> TimeseriesRepository:
+    """Get cached timeseries repository instance."""
+    return TimeseriesRepository()
+
+
+def get_daily_wind_service() -> DailyWindService:
+    """Get daily wind service instance."""
+    return DailyWindService(
+        spot_repo=get_spot_repository(),
+        timeseries_repo=get_timeseries_repository(),
     )

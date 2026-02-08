@@ -1,5 +1,5 @@
 import { api } from './index';
-import type { HistogramData, KiteablePercentageData, WindRoseData } from './types';
+import type { HistogramData, KiteablePercentageData, WindRoseData, DailyWindProfileData } from './types';
 
 export interface DateRangeParams {
   start_date?: string;
@@ -65,6 +65,20 @@ export const histogramApi = {
   ): Promise<WindRoseData> => {
     const { data } = await api.get<WindRoseData>(
       `/spots/${spotId}/windrose`,
+      { params }
+    );
+    return data;
+  },
+
+  /**
+   * Get daily wind profiles (dawn-to-dusk) for a spot
+   */
+  getDailyWindProfiles: async (
+    spotId: string,
+    params: DateRangeParams = {}
+  ): Promise<DailyWindProfileData> => {
+    const { data } = await api.get<DailyWindProfileData>(
+      `/spots/${spotId}/daily-wind-profiles`,
       { params }
     );
     return data;

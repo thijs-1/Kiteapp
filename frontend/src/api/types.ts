@@ -43,3 +43,15 @@ export interface WindRoseData {
   direction_bins: number[];
   data: number[][];
 }
+
+export interface DayProfile {
+  date: string;
+  hours: number[];
+  strength: number[];
+}
+
+export interface DailyWindProfileData {
+  spot_id: string;
+  timezone_offset_hours: number;
+  profiles: DayProfile[];
+}
