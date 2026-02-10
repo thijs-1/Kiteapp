@@ -1,8 +1,14 @@
-import { useState, useRef, useCallback, useEffect } from 'react';
+import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
 import { KiteableLineChart } from './Charts/KiteableLineChart';
 import { WindHistogram } from './Charts/WindHistogram';
 import { WindRose } from './Charts/WindRose';
 import { DailyWindChart } from './Charts/DailyWindChart';
+
+// Memoized chart components to prevent re-renders when only activeIndex changes
+const MemoKiteableLineChart = memo(KiteableLineChart);
+const MemoWindHistogram = memo(WindHistogram);
+const MemoWindRose = memo(WindRose);
+const MemoDailyWindChart = memo(DailyWindChart);
 
 interface CarouselProps {
   spotId: string;
@@ -60,8 +66,11 @@ export function Carousel({ spotId }: CarouselProps) {
   }, [handleButtonPress]);
 
   // Keyboard navigation (Left/Right arrow keys)
+  // Skip when focus is on interactive elements like sliders or inputs
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest('[role="slider"], input, textarea, select')) return;
       if (e.key === 'ArrowLeft') goToPrev();
       if (e.key === 'ArrowRight') goToNext();
     };
@@ -99,11 +108,26 @@ export function Carousel({ spotId }: CarouselProps) {
     touchStartY.current = null;
   }, [goToPrev, goToNext]);
 
+  // Reset touch state if browser cancels the gesture (e.g. system gesture, incoming call)
+  const handleTouchCancel = useCallback(() => {
+    touchStartX.current = null;
+    touchStartY.current = null;
+  }, []);
+
+  // Memoize chart elements so invisible charts don't re-render on navigation
+  const charts = useMemo(() => [
+    <MemoKiteableLineChart key={0} spotId={spotId} />,
+    <MemoWindHistogram key={1} spotId={spotId} />,
+    <MemoWindRose key={2} spotId={spotId} />,
+    <MemoDailyWindChart key={3} spotId={spotId} />,
+  ], [spotId]);
+
   return (
     <div
       className="h-full flex flex-col"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
+      onTouchCancel={handleTouchCancel}
     >
       {/* Chart title with page indicator */}
       <div className="flex items-center justify-center gap-2 mb-2">
@@ -140,12 +164,7 @@ export function Carousel({ spotId }: CarouselProps) {
 
         {/* Chart — all charts stay mounted, only active one visible */}
         <div className="flex-1 h-full min-w-0 relative">
-          {[
-            <KiteableLineChart key={0} spotId={spotId} />,
-            <WindHistogram key={1} spotId={spotId} />,
-            <WindRose key={2} spotId={spotId} />,
-            <DailyWindChart key={3} spotId={spotId} />,
-          ].map((chart, index) => (
+          {charts.map((chart, index) => (
             <div
               key={index}
               className={`absolute inset-0 transition-[opacity,visibility] duration-200 ${
