@@ -148,10 +148,10 @@ export function Carousel({ spotId }: CarouselProps) {
           ].map((chart, index) => (
             <div
               key={index}
-              className={`absolute inset-0 transition-opacity duration-200 ${
+              className={`absolute inset-0 transition-[opacity,visibility] duration-200 ${
                 index === activeIndex
-                  ? 'opacity-100'
-                  : 'opacity-0 pointer-events-none'
+                  ? 'opacity-100 visible'
+                  : 'opacity-0 invisible pointer-events-none'
               }`}
             >
               {chart}
