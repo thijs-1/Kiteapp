@@ -1,6 +1,7 @@
 """Repository for spot data access."""
 from pathlib import Path
 from typing import List, Optional, Dict
+import numpy as np
 import pandas as pd
 
 from backend.config import settings
@@ -15,6 +16,15 @@ class SpotRepository:
         self._df: Optional[pd.DataFrame] = None
         self._country_index: Dict[str, List[int]] = {}
         self._loaded = False
+
+        # Parallel arrays for fast filtering (built on load)
+        self._spot_ids: Optional[np.ndarray] = None
+        self._names: Optional[np.ndarray] = None
+        self._latitudes: Optional[np.ndarray] = None
+        self._longitudes: Optional[np.ndarray] = None
+        self._countries: Optional[np.ndarray] = None
+        self._spot_id_to_idx: Dict[str, int] = {}
+        self._names_lower: Optional[np.ndarray] = None
 
     def _load(self) -> None:
         """Load spots from pickle file."""
@@ -32,7 +42,39 @@ class SpotRepository:
                 self._country_index[country] = []
             self._country_index[country].append(idx)
 
+        # Build parallel arrays for fast filtering
+        self._spot_ids = self._df["spot_id"].values
+        self._names = self._df["name"].values
+        self._latitudes = self._df["latitude"].values.astype(np.float32)
+        self._longitudes = self._df["longitude"].values.astype(np.float32)
+        self._countries = self._df["country"].values
+        self._spot_id_to_idx = {sid: i for i, sid in enumerate(self._spot_ids)}
+        self._names_lower = np.array([
+            str(n).lower() if pd.notna(n) else "" for n in self._names
+        ])
+
         self._loaded = True
+
+    def get_arrays(self):
+        """Get parallel arrays for fast filtering. Returns (spot_ids, names, latitudes, longitudes, countries)."""
+        self._load()
+        return self._spot_ids, self._names, self._latitudes, self._longitudes, self._countries
+
+    def get_spot_id_to_idx(self) -> Dict[str, int]:
+        """Get mapping from spot_id to array index."""
+        self._load()
+        return self._spot_id_to_idx
+
+    def get_country_mask(self, country: str) -> np.ndarray:
+        """Get boolean mask for spots in a country."""
+        self._load()
+        return self._countries == country
+
+    def get_name_mask(self, name: str) -> np.ndarray:
+        """Get boolean mask for spots matching a name substring (case-insensitive)."""
+        self._load()
+        needle = name.lower()
+        return np.array([needle in n for n in self._names_lower])
 
     @property
     def df(self) -> pd.DataFrame:

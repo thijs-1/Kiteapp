@@ -5,7 +5,7 @@ export const spotApi = {
   /**
    * Get filtered spots based on wind conditions
    */
-  getFilteredSpots: async (filters: Partial<SpotFilters>): Promise<SpotWithStats[]> => {
+  getFilteredSpots: async (filters: Partial<SpotFilters>, signal?: AbortSignal): Promise<SpotWithStats[]> => {
     const params = {
       wind_min: filters.wind_min ?? 0,
       wind_max: filters.wind_max ?? 100,
@@ -17,7 +17,7 @@ export const spotApi = {
       ...(filters.country && { country: filters.country }),
       ...(filters.name && { name: filters.name }),
     };
-    const { data } = await api.get<SpotWithStats[]>('/spots', { params });
+    const { data } = await api.get<SpotWithStats[]>('/spots', { params, signal });
     return data;
   },
 

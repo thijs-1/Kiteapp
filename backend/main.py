@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import ORJSONResponse
 
 from backend.config import settings
 from backend.api.routes import spots, histograms, windrose, daily_wind
@@ -15,12 +16,13 @@ async def lifespan(app: FastAPI):
     get_histogram_repository().preload()
     yield
 
-# Create FastAPI app
+# Create FastAPI app with orjson for faster JSON serialization
 app = FastAPI(
     title=settings.api_title,
     version=settings.api_version,
     redirect_slashes=False,
     lifespan=lifespan,
+    default_response_class=ORJSONResponse,
 )
 
 # Add CORS middleware

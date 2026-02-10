@@ -22,8 +22,9 @@ def get_histogram_repository() -> HistogramRepository:
     return HistogramRepository()
 
 
+@lru_cache()
 def get_spot_service() -> SpotService:
-    """Get spot service instance."""
+    """Get cached spot service instance."""
     return SpotService(
         spot_repo=get_spot_repository(),
         histogram_repo=get_histogram_repository(),
