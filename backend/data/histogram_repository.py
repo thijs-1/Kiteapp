@@ -1,6 +1,7 @@
 """Repository for histogram data access."""
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Optional, Dict, Any, List, Tuple
+from functools import lru_cache
 import pickle
 import numpy as np
 
@@ -58,12 +59,21 @@ class HistogramRepository:
         with open(self.histograms_1d_file, "rb") as f:
             data = pickle.load(f)
 
-        self._1d_data = data["data"]
+        self._1d_data = data["data"].astype(np.float32) if data["data"].dtype != np.float32 else data["data"]
         self._1d_spot_ids = data["spot_ids"]
         self._1d_spot_to_idx = {sid: idx for idx, sid in enumerate(self._1d_spot_ids)}
         self._1d_bins = data["bins"]
         self._1d_days = data["days"]
         self._1d_day_to_idx = {day: idx for idx, day in enumerate(self._1d_days)}
+
+        # Precompute prefix sums along day axis: shape (num_spots, 367, num_bins)
+        # prefix[s, d, b] = sum of data[s, 0:d, b]
+        self._1d_prefix = np.zeros(
+            (self._1d_data.shape[0], self._1d_data.shape[1] + 1, self._1d_data.shape[2]),
+            dtype=np.float32,
+        )
+        np.cumsum(self._1d_data, axis=1, out=self._1d_prefix[:, 1:, :])
+
         self._1d_loaded = True
 
     def _load_sustained_data(self) -> None:
@@ -78,7 +88,7 @@ class HistogramRepository:
         with open(self.sustained_wind_file, "rb") as f:
             data = pickle.load(f)
 
-        self._sustained_data = data["data"]
+        self._sustained_data = data["data"].astype(np.float32) if data["data"].dtype != np.float32 else data["data"]
         self._sustained_spot_ids = data["spot_ids"]
         self._sustained_spot_to_idx = {sid: idx for idx, sid in enumerate(self._sustained_spot_ids)}
         self._sustained_bins = data["bins"]
@@ -124,6 +134,11 @@ class HistogramRepository:
             Boolean mask of shape (366,) for days in range
         """
         self._load_1d_data()
+        return self._get_day_mask_cached(start_date, end_date)
+
+    @lru_cache(maxsize=512)
+    def _get_day_mask_cached(self, start_date: str, end_date: str) -> np.ndarray:
+        """Cached day mask computation."""
         days = np.array(self._1d_days)
 
         if start_date <= end_date:
@@ -132,6 +147,7 @@ class HistogramRepository:
             # Wrap-around (e.g., Nov to Feb)
             mask = (days >= start_date) | (days <= end_date)
 
+        mask.flags.writeable = False  # Prevent mutation of cached array
         return mask
 
     def get_1d_bin_mask(self, wind_min: float, wind_max: float) -> np.ndarray:
@@ -142,6 +158,11 @@ class HistogramRepository:
             Boolean mask of shape (num_bins,)
         """
         self._load_1d_data()
+        return self._get_bin_mask_cached(wind_min, wind_max)
+
+    @lru_cache(maxsize=256)
+    def _get_bin_mask_cached(self, wind_min: float, wind_max: float) -> np.ndarray:
+        """Cached bin mask computation."""
         bins = np.array(self._1d_bins)
         num_bins = len(bins) - 1
         mask = np.zeros(num_bins, dtype=bool)
@@ -153,7 +174,50 @@ class HistogramRepository:
             if bin_low < wind_max and bin_high > wind_min:
                 mask[i] = True
 
+        mask.flags.writeable = False  # Prevent mutation of cached array
         return mask
+
+    def get_day_range_indices(self, start_date: str, end_date: str) -> Tuple[int, int, bool]:
+        """
+        Convert date range to array indices.
+
+        Returns:
+            (start_idx, end_idx, wraps) where wraps=True means range crosses year boundary
+        """
+        self._load_1d_data()
+        return self._get_day_range_cached(start_date, end_date)
+
+    @lru_cache(maxsize=512)
+    def _get_day_range_cached(self, start_date: str, end_date: str) -> Tuple[int, int, bool]:
+        """Cached day range computation."""
+        start_idx = self._1d_day_to_idx.get(start_date, 0)
+        end_idx = self._1d_day_to_idx.get(end_date, len(self._1d_days) - 1)
+        wraps = start_date > end_date
+        return start_idx, end_idx, wraps
+
+    def get_range_sums(self, start_date: str, end_date: str) -> Optional[np.ndarray]:
+        """
+        Get sum of histogram data over a date range using prefix sums.
+
+        Returns:
+            Array of shape (num_spots, num_bins) with sums over the date range
+        """
+        self._load_1d_data()
+        if self._1d_data is None:
+            return None
+
+        start_idx, end_idx, wraps = self.get_day_range_indices(start_date, end_date)
+
+        if not wraps:
+            # Contiguous range: prefix[end+1] - prefix[start]
+            return self._1d_prefix[:, end_idx + 1, :] - self._1d_prefix[:, start_idx, :]
+        else:
+            # Wrap-around: [start, last_day] + [0, end]
+            num_days = self._1d_data.shape[1]
+            return (
+                (self._1d_prefix[:, num_days, :] - self._1d_prefix[:, start_idx, :])
+                + self._1d_prefix[:, end_idx + 1, :]
+            )
 
     def get_spot_index(self, spot_id: str) -> Optional[int]:
         """Get array index for a spot ID."""

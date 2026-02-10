@@ -1,5 +1,6 @@
 """Service for spot filtering and statistics."""
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Tuple
+from functools import lru_cache
 import numpy as np
 import pandas as pd
 
@@ -19,6 +20,7 @@ class SpotService:
         """Initialize service with repositories."""
         self.spot_repo = spot_repo or SpotRepository()
         self.histogram_repo = histogram_repo or HistogramRepository()
+        self._filter_cache: Dict[tuple, List[SpotWithStats]] = {}
 
     def get_all_spots(self) -> List[SpotBase]:
         """Get all spots as SpotBase objects."""
@@ -206,65 +208,173 @@ class SpotService:
         if wind_max >= 100:
             wind_max = float("inf")
 
-        # Calculate percentages for ALL spots at once (vectorized)
-        all_percentages = self._calculate_all_percentages_vectorized(
+        # Check result cache
+        cache_key = (
+            wind_min, wind_max, start_date, end_date,
+            country, name, min_percentage,
+            sustained_wind_min, sustained_wind_days_min,
+        )
+        if cache_key in self._filter_cache:
+            return self._filter_cache[cache_key]
+
+        result = self._filter_spots_uncached(
+            wind_min, wind_max, start_date, end_date,
+            country, name, min_percentage,
+            sustained_wind_min, sustained_wind_days_min,
+        )
+
+        # Store in cache (bounded to prevent unbounded growth)
+        if len(self._filter_cache) >= 512:
+            # Evict oldest entry
+            self._filter_cache.pop(next(iter(self._filter_cache)))
+        self._filter_cache[cache_key] = result
+
+        return result
+
+    def _filter_spots_uncached(
+        self,
+        wind_min: float,
+        wind_max: float,
+        start_date: str,
+        end_date: str,
+        country: Optional[str],
+        name: Optional[str],
+        min_percentage: float,
+        sustained_wind_min: float,
+        sustained_wind_days_min: float,
+    ) -> List[SpotWithStats]:
+        """Core filtering logic using NumPy arrays (uncached)."""
+        # Calculate percentages for ALL spots at once (vectorized) — returns arrays
+        percentages = self._calculate_all_percentages_array(
             wind_min, wind_max, start_date, end_date
         )
 
-        if not all_percentages:
+        if percentages is None:
             return []
 
-        # Calculate sustained wind percentages if threshold is set
-        sustained_percentages = {}
+        histogram_spot_ids = self.histogram_repo.get_1d_spot_ids()
+        spot_ids, names, latitudes, longitudes, countries = self.spot_repo.get_arrays()
+        spot_id_to_idx = self.spot_repo.get_spot_id_to_idx()
+
+        # Map histogram percentages to spot array order
+        hist_id_to_idx = self.histogram_repo._1d_spot_to_idx
+        pct_array = np.zeros(len(spot_ids), dtype=np.float32)
+        for sid, h_idx in hist_id_to_idx.items():
+            s_idx = spot_id_to_idx.get(sid)
+            if s_idx is not None:
+                pct_array[s_idx] = percentages[h_idx]
+
+        # Build combined mask
+        mask = pct_array >= min_percentage
+
+        if country:
+            mask &= self.spot_repo.get_country_mask(country)
+        if name:
+            mask &= self.spot_repo.get_name_mask(name)
+
+        # Apply sustained wind filter
         if sustained_wind_min > 0:
-            sustained_percentages = self._calculate_sustained_percentages_vectorized(
+            sustained_pct = self._calculate_sustained_percentages_array(
                 sustained_wind_min, start_date, end_date
             )
+            if sustained_pct is not None:
+                sustained_spot_ids = self.histogram_repo.get_sustained_spot_ids()
+                sust_id_to_idx = self.histogram_repo._sustained_spot_to_idx
+                sust_array = np.zeros(len(spot_ids), dtype=np.float32)
+                for sid, h_idx in sust_id_to_idx.items():
+                    s_idx = spot_id_to_idx.get(sid)
+                    if s_idx is not None:
+                        sust_array[s_idx] = sustained_pct[h_idx]
+                mask &= sust_array >= sustained_wind_days_min
 
-        # Get spot metadata
-        if country:
-            df = self.spot_repo.filter_by_country(country)
-        elif name:
-            df = self.spot_repo.search_by_name(name)
-        else:
-            df = self.spot_repo.get_all_spots()
+        # Get passing indices, sort by percentage descending
+        passing_idx = np.where(mask)[0]
+        if len(passing_idx) == 0:
+            return []
 
-        if name and country:
-            # Apply name filter on top of country filter
-            df = df[df["name"].str.lower().str.contains(name.lower(), na=False)]
+        order = np.argsort(-pct_array[passing_idx])
+        result_idx = passing_idx[order]
 
-        # Add percentages as column using vectorized map
-        df = df.copy()
-        df["kiteable_percentage"] = df["spot_id"].map(all_percentages)
-
-        # Filter by kiteable percentage
-        df = df[df["kiteable_percentage"] >= min_percentage]
-
-        # Apply sustained wind filter if threshold is set
-        if sustained_wind_min > 0 and sustained_percentages:
-            df["sustained_pct"] = df["spot_id"].map(sustained_percentages).fillna(0)
-            # Filter spots where sustained wind percentage meets the days threshold
-            df = df[df["sustained_pct"] >= sustained_wind_days_min]
-            df = df.drop(columns=["sustained_pct"])
-
-        # Sort by kiteable percentage
-        df = df.sort_values("kiteable_percentage", ascending=False)
-
-        # Round percentages
-        df["kiteable_percentage"] = df["kiteable_percentage"].round(1)
-
-        # Convert to list of Pydantic models using itertuples (faster than iterrows)
+        # Build result list directly (no DataFrame, no Pydantic overhead in hot path)
         return [
             SpotWithStats(
-                spot_id=row.spot_id,
-                name=row.name,
-                latitude=row.latitude,
-                longitude=row.longitude,
-                country=row.country,
-                kiteable_percentage=row.kiteable_percentage,
+                spot_id=str(spot_ids[i]),
+                name=str(names[i]),
+                latitude=float(latitudes[i]),
+                longitude=float(longitudes[i]),
+                country=str(countries[i]) if pd.notna(countries[i]) else None,
+                kiteable_percentage=round(float(pct_array[i]), 1),
             )
-            for row in df.itertuples(index=False)
+            for i in result_idx
         ]
+
+    def _calculate_all_percentages_array(
+        self,
+        wind_min: float,
+        wind_max: float,
+        start_date: str,
+        end_date: str,
+    ) -> Optional[np.ndarray]:
+        """
+        Calculate kiteable percentage for ALL spots using prefix sums.
+
+        Uses precomputed cumulative sums for O(spots × bins) regardless of date range size.
+
+        Returns:
+            NumPy array of percentages (num_spots,), or None if no data
+        """
+        # Get range sums via prefix sums: shape (num_spots, num_bins)
+        range_sums = self.histogram_repo.get_range_sums(start_date, end_date)
+        if range_sums is None:
+            return None
+
+        spot_ids = self.histogram_repo.get_1d_spot_ids()
+        if not spot_ids:
+            return None
+
+        # Get cached bin mask
+        bin_mask = self.histogram_repo.get_1d_bin_mask(wind_min, wind_max)
+
+        # Totals per spot: sum over all bins
+        totals = range_sums.sum(axis=1)  # Shape: (num_spots,)
+
+        # In-range counts: sum over selected bins only
+        in_range = range_sums[:, bin_mask].sum(axis=1)  # Shape: (num_spots,)
+
+        # Calculate percentages (avoid division by zero)
+        with np.errstate(divide='ignore', invalid='ignore'):
+            percentages = np.where(totals > 0, (in_range / totals) * 100, 0).astype(np.float32)
+
+        return percentages
+
+    def _calculate_sustained_percentages_array(
+        self,
+        wind_threshold: float,
+        start_date: str,
+        end_date: str,
+    ) -> Optional[np.ndarray]:
+        """
+        Calculate sustained wind percentages for ALL spots.
+
+        Returns:
+            NumPy array of percentages (num_spots,), or None if no data
+        """
+        data = self.histogram_repo.get_sustained_data()
+        if data is None:
+            return None
+
+        spot_ids = self.histogram_repo.get_sustained_spot_ids()
+        if not spot_ids:
+            return None
+
+        day_mask = self.histogram_repo.get_1d_day_indices(start_date, end_date)
+        bin_idx = self.histogram_repo.get_sustained_bin_index(wind_threshold)
+
+        filtered = data[:, day_mask, :]
+        pct_above_threshold = filtered[:, :, bin_idx:].sum(axis=2)
+        avg_pct = pct_above_threshold.mean(axis=1)
+
+        return avg_pct.astype(np.float32)
 
     def get_countries(self) -> List[str]:
         """Get list of all countries."""
