@@ -17,44 +17,12 @@ import { useIsMobile } from '../../../hooks/useIsMobile';
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend, SubTitle);
 
 // Direction labels for 36 sectors (10 degrees each)
-// Bins are centered at 0°, 10°, 20°, ... so N=0, E=9, S=18, W=27
+// Only label the 4 cardinal directions: N=0, E=9, S=18, W=27
 const DIRECTION_LABELS = [
-  'N',   // 0 = 0°
-  '',    // 1 = 10°
-  'NNE', // 2 = 20° (NNE is 22.5°)
-  '',    // 3 = 30°
-  'NE',  // 4 = 40° (NE is 45°)
-  '',    // 5 = 50°
-  '',    // 6 = 60°
-  'ENE', // 7 = 70° (ENE is 67.5°)
-  '',    // 8 = 80°
-  'E',   // 9 = 90°
-  '',    // 10 = 100°
-  'ESE', // 11 = 110° (ESE is 112.5°)
-  '',    // 12 = 120°
-  'SE',  // 13 = 130° (SE is 135°)
-  '',    // 14 = 140°
-  '',    // 15 = 150°
-  'SSE', // 16 = 160° (SSE is 157.5°)
-  '',    // 17 = 170°
-  'S',   // 18 = 180°
-  '',    // 19 = 190°
-  'SSW', // 20 = 200° (SSW is 202.5°)
-  '',    // 21 = 210°
-  'SW',  // 22 = 220° (SW is 225°)
-  '',    // 23 = 230°
-  '',    // 24 = 240°
-  'WSW', // 25 = 250° (WSW is 247.5°)
-  '',    // 26 = 260°
-  'W',   // 27 = 270°
-  '',    // 28 = 280°
-  'WNW', // 29 = 290° (WNW is 292.5°)
-  '',    // 30 = 300°
-  'NW',  // 31 = 310° (NW is 315°)
-  '',    // 32 = 320°
-  '',    // 33 = 330°
-  'NNW', // 34 = 340° (NNW is 337.5°)
-  '',    // 35 = 350°
+  'N',  '', '', '', '', '', '', '', '',
+  'E',  '', '', '', '', '', '', '', '',
+  'S',  '', '', '', '', '', '', '', '',
+  'W',  '', '', '', '', '', '', '', '',
 ];
 
 interface Props {
