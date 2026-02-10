@@ -18,6 +18,7 @@ import { useKiteablePercentage } from '../../../hooks/useHistogram';
 import { useFilterStore } from '../../../store/filterStore';
 import { sortDatesForRange } from '../../../utils/dateUtils';
 import { ChartDateRangeSelector } from './ChartDateRangeSelector';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 
 const SLIDER_MAX = 37.5;
 const STORE_INFINITY = 100;
@@ -40,6 +41,7 @@ interface Props {
 export function KiteableLineChart({ spotId }: Props) {
   const { startDate, endDate, windMin, windMax, setWindRange } = useFilterStore();
   const { data, isLoading, error } = useKiteablePercentage(spotId);
+  const isMobile = useIsMobile();
 
   // Local state for slider (to avoid API calls on every drag)
   const [localWindRange, setLocalWindRange] = useState([
@@ -54,8 +56,9 @@ export function KiteableLineChart({ spotId }: Props) {
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center gap-2">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
+        <span className="text-sm text-gray-400">Loading chart...</span>
       </div>
     );
   }
@@ -134,10 +137,11 @@ export function KiteableLineChart({ spotId }: Props) {
           maxRotation: 0,
           callback: function (_value: unknown, index: number) {
             const total = labels.length;
-            if (total <= 7) return labels[index];
+            const maxLabels = isMobile ? 4 : 6;
+            if (total <= maxLabels + 1) return labels[index];
             // Always show first and last; evenly space the rest
             if (index === 0 || index === total - 1) return labels[index];
-            const step = Math.floor((total - 1) / 6);
+            const step = Math.floor((total - 1) / maxLabels);
             if (index % step === 0 && index + step < total) return labels[index];
             return null;
           },

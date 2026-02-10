@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useCallback } from 'react';
 import { useSpotStore } from '../../store/spotStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Carousel } from './Carousel';
@@ -6,6 +6,8 @@ import { Carousel } from './Carousel';
 export function SpotModal() {
   const { selectedSpot, selectSpot } = useSpotStore();
   const isMobile = useIsMobile();
+
+  const handleClose = useCallback(() => selectSpot(null), [selectSpot]);
 
   // Lock body scroll when modal is open
   useEffect(() => {
@@ -17,16 +19,30 @@ export function SpotModal() {
     }
   }, [selectedSpot]);
 
+  // Close on Escape key
+  useEffect(() => {
+    if (!selectedSpot) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') handleClose();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [selectedSpot, handleClose]);
+
   if (!selectedSpot) return null;
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1001] p-0 sm:p-4">
+    <div
+      className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1001] p-0 sm:p-4"
+      onClick={handleClose}
+    >
       <div
         className={`bg-white flex flex-col shadow-2xl ${
           isMobile
             ? 'w-full h-full rounded-none'
             : 'rounded-xl w-full max-w-4xl h-[80vh]'
         }`}
+        onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
         <div className="flex justify-between items-center p-3 sm:p-4 border-b">
@@ -37,6 +53,9 @@ export function SpotModal() {
             <p className="text-xs sm:text-sm text-gray-500">
               {selectedSpot.country} • {selectedSpot.kiteable_percentage.toFixed(0)}%
               kiteable
+              <span className="hidden sm:inline">
+                {' '}• {selectedSpot.latitude.toFixed(2)}, {selectedSpot.longitude.toFixed(2)}
+              </span>
             </p>
           </div>
           <button

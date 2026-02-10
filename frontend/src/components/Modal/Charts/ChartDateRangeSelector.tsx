@@ -1,6 +1,7 @@
 import { useRef, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Chart as ChartJS } from 'chart.js';
 import { useFilterStore } from '../../../store/filterStore';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 
 interface Props {
   children: ReactNode;
@@ -18,6 +19,8 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
   const [selectionStart, setSelectionStart] = useState<number | null>(null);
   const [selectionEnd, setSelectionEnd] = useState<number | null>(null);
   const { startDate, endDate, setDateRange } = useFilterStore();
+  const isMobile = useIsMobile();
+  const [zoomMode, setZoomMode] = useState(false);
 
   // Use refs to track touch state for native event handlers
   const isDraggingRef = useRef(false);
@@ -125,6 +128,7 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
       const newStartDate = dates[startIdx];
       const newEndDate = dates[endIdx];
       setDateRange(newStartDate, newEndDate);
+      setZoomMode(false);
     }
 
     setIsDragging(false);
@@ -206,6 +210,7 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
         const newStartDate = dates[startIdx];
         const newEndDate = dates[endIdx];
         setDateRange(newStartDate, newEndDate);
+        setZoomMode(false);
       }
 
       isDraggingRef.current = false;
@@ -300,6 +305,7 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
           width: overlayBounds ? `${overlayBounds.right - overlayBounds.left}px` : '100%',
           cursor: disabled ? 'default' : 'crosshair',
           touchAction: 'none',
+          pointerEvents: (!isMobile || zoomMode) ? 'auto' : 'none',
         }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -337,10 +343,28 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
         </div>
       )}
 
+      {/* Zoom toggle button (mobile only) */}
+      {!disabled && isMobile && (
+        <button
+          onClick={(e) => { e.stopPropagation(); setZoomMode((v) => !v); }}
+          className={`absolute top-1 right-1 z-10 w-8 h-8 flex items-center justify-center rounded-full transition-colors ${
+            zoomMode ? 'bg-kite text-white' : 'bg-white/80 text-gray-400 border border-gray-200'
+          }`}
+          aria-label={zoomMode ? 'Disable date zoom' : 'Enable date zoom'}
+        >
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0zM10 7v3m0 0v3m0-3h3m-3 0H7" />
+          </svg>
+        </button>
+      )}
+
       {/* Drag hint */}
       {!disabled && !isDragging && (
-        <div className="absolute -bottom-5 right-2 text-xs text-gray-400 pointer-events-none">
-          {isZoomedIn ? 'Drag to zoom, double-click to reset' : 'Drag to select date range'}
+        <div className="absolute bottom-1 left-1/2 -translate-x-1/2 text-xs text-gray-400 bg-white/90 px-2 py-0.5 rounded pointer-events-none whitespace-nowrap">
+          {isMobile
+            ? (isZoomedIn ? 'Tap 🔍 to zoom, double-tap to reset' : 'Tap 🔍 to select date range')
+            : (isZoomedIn ? 'Drag to zoom, double-click to reset' : 'Drag to select date range')
+          }
         </div>
       )}
     </div>

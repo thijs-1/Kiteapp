@@ -11,6 +11,7 @@ import {
 import { Bar } from 'react-chartjs-2';
 import { useHistogramData } from '../../../hooks/useHistogram';
 import { useFilterStore } from '../../../store/filterStore';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 import {
   sortDatesForRange,
   sortMonthsForRange,
@@ -29,11 +30,13 @@ interface Props {
 export function WindHistogram({ spotId }: Props) {
   const { startDate, endDate } = useFilterStore();
   const { data, isLoading, error } = useHistogramData(spotId);
+  const isMobile = useIsMobile();
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center gap-2">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
+        <span className="text-sm text-gray-400">Loading chart...</span>
       </div>
     );
   }
@@ -127,6 +130,7 @@ export function WindHistogram({ spotId }: Props) {
     maintainAspectRatio: false,
     plugins: {
       legend: {
+        display: !isMobile,
         position: 'right' as const,
         labels: {
           boxWidth: 12,
@@ -147,8 +151,10 @@ export function WindHistogram({ spotId }: Props) {
         ticks: {
           maxRotation: aggregationLevel === 'daily' ? 45 : 0,
           autoSkip: true,
-          maxTicksLimit: aggregationLevel === 'daily' ? 15 : undefined,
-          font: { size: aggregationLevel === 'daily' ? 9 : 11 },
+          maxTicksLimit: aggregationLevel === 'daily'
+            ? (isMobile ? 7 : 15)
+            : (aggregationLevel === 'weekly' ? (isMobile ? 6 : undefined) : undefined),
+          font: { size: aggregationLevel === 'daily' ? 9 : (isMobile ? 9 : 11) },
         },
       },
       y: {

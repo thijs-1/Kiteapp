@@ -12,6 +12,7 @@ import {
 import { Radar } from 'react-chartjs-2';
 import { useWindRoseData } from '../../../hooks/useHistogram';
 import { WIND_COLORS } from '../../../utils/windColors';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend, SubTitle);
 
@@ -62,11 +63,13 @@ interface Props {
 
 export function WindRose({ spotId }: Props) {
   const { data, isLoading, error } = useWindRoseData(spotId);
+  const isMobile = useIsMobile();
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center gap-2">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
+        <span className="text-sm text-gray-400">Loading chart...</span>
       </div>
     );
   }
@@ -131,6 +134,7 @@ export function WindRose({ spotId }: Props) {
   const balanceLegendPlugin = {
     id: 'balanceLegend',
     afterLayout(chart: ChartJS) {
+      if (isMobile) return;
       const legendWidth = chart.legend?.width || 0;
       if (legendWidth > 0 && chart.options.layout?.padding !== undefined) {
         const padding = chart.options.layout.padding as { left: number };
@@ -158,7 +162,7 @@ export function WindRose({ spotId }: Props) {
         padding: { top: 4 },
       },
       legend: {
-        display: true,
+        display: !isMobile,
         position: 'right' as const,
         labels: {
           boxWidth: 12,

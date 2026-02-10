@@ -9,6 +9,7 @@ import {
 } from 'chart.js';
 import { Scatter } from 'react-chartjs-2';
 import { useDailyWindProfiles } from '../../../hooks/useHistogram';
+import { useIsMobile } from '../../../hooks/useIsMobile';
 
 ChartJS.register(
   LinearScale,
@@ -42,11 +43,13 @@ function formatHour(h: number): string {
 
 export function DailyWindChart({ spotId }: Props) {
   const { data, isLoading, error } = useDailyWindProfiles(spotId);
+  const isMobile = useIsMobile();
 
   if (isLoading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div className="h-full flex flex-col items-center justify-center gap-2">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
+        <span className="text-sm text-gray-400">Loading chart...</span>
       </div>
     );
   }
@@ -106,7 +109,7 @@ export function DailyWindChart({ spotId }: Props) {
           text: 'Local Time',
         },
         ticks: {
-          stepSize: 2,
+          stepSize: isMobile ? 3 : 2,
           callback: (value) => formatHour(value as number),
         },
         grid: {

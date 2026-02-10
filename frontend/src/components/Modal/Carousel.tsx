@@ -59,6 +59,16 @@ export function Carousel({ spotId }: CarouselProps) {
     setActiveIndex((prev) => (prev + 1) % CHART_TITLES.length);
   }, [handleButtonPress]);
 
+  // Keyboard navigation (Left/Right arrow keys)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowLeft') goToPrev();
+      if (e.key === 'ArrowRight') goToNext();
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [goToPrev, goToNext]);
+
   // Swipe gesture handlers
   const handleTouchStart = useCallback((e: React.TouchEvent) => {
     if (e.touches.length === 1) {
@@ -95,10 +105,13 @@ export function Carousel({ spotId }: CarouselProps) {
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
-      {/* Chart title */}
-      <h3 className="text-center text-lg font-semibold text-gray-700 mb-2">
-        {CHART_TITLES[activeIndex]}
-      </h3>
+      {/* Chart title with page indicator */}
+      <div className="flex items-center justify-center gap-2 mb-2">
+        <h3 className="text-lg font-semibold text-gray-700">
+          {CHART_TITLES[activeIndex]}
+        </h3>
+        <span className="text-sm text-gray-400">{activeIndex + 1}/{CHART_TITLES.length}</span>
+      </div>
 
       {/* Chart container with navigation */}
       <div className="flex-1 flex items-center gap-2 sm:gap-4 min-h-0">
@@ -125,12 +138,25 @@ export function Carousel({ spotId }: CarouselProps) {
           </svg>
         </button>
 
-        {/* Chart */}
-        <div className="flex-1 h-full min-w-0">
-          {activeIndex === 0 && <KiteableLineChart spotId={spotId} />}
-          {activeIndex === 1 && <WindHistogram spotId={spotId} />}
-          {activeIndex === 2 && <WindRose spotId={spotId} />}
-          {activeIndex === 3 && <DailyWindChart spotId={spotId} />}
+        {/* Chart — all charts stay mounted, only active one visible */}
+        <div className="flex-1 h-full min-w-0 relative">
+          {[
+            <KiteableLineChart key={0} spotId={spotId} />,
+            <WindHistogram key={1} spotId={spotId} />,
+            <WindRose key={2} spotId={spotId} />,
+            <DailyWindChart key={3} spotId={spotId} />,
+          ].map((chart, index) => (
+            <div
+              key={index}
+              className={`absolute inset-0 transition-opacity duration-200 ${
+                index === activeIndex
+                  ? 'opacity-100'
+                  : 'opacity-0 pointer-events-none'
+              }`}
+            >
+              {chart}
+            </div>
+          ))}
         </div>
 
         {/* Next button - larger touch target */}
