@@ -358,16 +358,9 @@ export function ChartDateRangeSelector({ children, dates, disabled = false }: Pr
         </button>
       )}
 
-      {/* Drag hint - rotated on the right side, aligned to top */}
+      {/* Drag hint */}
       {!disabled && !isDragging && (
-        <div
-          className="absolute text-xs text-gray-400 bg-white/90 px-2 py-0.5 rounded pointer-events-none whitespace-nowrap"
-          style={{
-            right: 0,
-            top: overlayBounds ? `${overlayBounds.top}px` : '0px',
-            writingMode: 'vertical-rl',
-          }}
-        >
+        <div className={`absolute left-1/2 -translate-x-1/2 text-xs text-gray-400 bg-white/90 px-2 py-0.5 rounded pointer-events-none whitespace-nowrap ${isMobile ? '-bottom-2' : 'bottom-1'}`}>
           {isMobile
             ? (isZoomedIn ? 'Tap 🔍 to zoom, double-tap to reset' : 'Tap 🔍 to select date range')
             : (isZoomedIn ? 'Drag to zoom, double-click to reset' : 'Drag to select date range')
