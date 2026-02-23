@@ -56,9 +56,3 @@ FILTER_DAYLIGHT_HOURS = True
 # 12 = nautical twilight
 # 18 = astronomical twilight
 DAYLIGHT_DEPRESSION_ANGLE = 6.0
-
-# Sustained wind strength configuration
-# Minimum consecutive hours of sustained wind strength to record
-SUSTAINED_WIND_HOURS = 2
-# Output file for sustained wind data
-SUSTAINED_WIND_FILE = PROCESSED_DATA_DIR / "sustained_wind.pkl"

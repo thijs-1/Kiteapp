@@ -40,28 +40,3 @@ class DailyHistogram2D:
             "direction_bins": self.direction_bins,
             "daily_counts": {k: v.tolist() for k, v in self.daily_counts.items()},
         }
-
-
-@define
-class DailySustainedWind:
-    """Daily histogram of maximum sustained wind strength as percentages.
-
-    For each day of year, stores the percentage of days (across all years)
-    that had max sustained wind in each bin. To get "% of days with sustained
-    wind >= X knots", sum the percentages from bin X onwards.
-    """
-
-    spot_id: str
-    sustained_hours: int  # Minimum consecutive hours required
-    bins: list  # Wind strength bin edges (same as 1D histogram)
-    # Dict mapping day-of-year ("01-01", ...) to percentage per bin (sums to 100)
-    daily_percentages: Dict[str, np.ndarray]
-
-    def to_dict(self) -> dict:
-        """Convert to serializable dictionary."""
-        return {
-            "spot_id": self.spot_id,
-            "sustained_hours": self.sustained_hours,
-            "bins": self.bins,
-            "daily_percentages": {k: v.tolist() for k, v in self.daily_percentages.items()},
-        }
