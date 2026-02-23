@@ -13,6 +13,7 @@ gcsfs>=2024.2.0  # For ARCO ERA5 Zarr access on Google Cloud Storage
 zarr>=2.16.0  # For xarray Zarr backend
 tqdm>=4.66.0
 attrs>=23.2.0
+psutil>=5.9.0  # For RAM detection in ARCO downloads
 
 # Backend
 fastapi>=0.109.0

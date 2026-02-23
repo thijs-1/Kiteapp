@@ -1,9 +1,15 @@
 """Service for downloading ERA5 wind data from Google ARCO ERA5 (Zarr on GCS)."""
 from pathlib import Path
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 import xarray as xr
 import numpy as np
+
+try:
+    import psutil
+    _HAS_PSUTIL = True
+except ImportError:
+    _HAS_PSUTIL = False
 
 from data_pipelines.config import (
     RAW_DATA_DIR,
@@ -18,6 +24,9 @@ ARCO_ZARR_URL = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.za
 # Variable names in the hourly dataset (full names in this dataset)
 ARCO_VAR_U10 = "10m_u_component_of_wind"
 ARCO_VAR_V10 = "10m_v_component_of_wind"
+
+# Bytes per hour of global ERA5 data: 721 lat × 1440 lon × 2 vars × 4 bytes (float32)
+_BYTES_PER_HOUR_GLOBAL = 721 * 1440 * 2 * 4  # ~7.93 MB
 
 
 class ARCOService:
@@ -63,21 +72,38 @@ class ARCOService:
             List of (start_date, end_date) tuples as strings in 'YYYY-MM-DD' format
         """
         if test_days:
-            # Quick test mode: just a few days
-            return [("2020-01-01", f"2020-01-{test_days:02d}")]
+            # Test mode: use quarterly chunks within the test range
+            start = datetime(2020, 1, 1)
+            end = start + timedelta(days=test_days - 1)
+        else:
+            years = self.get_year_range()
+            start = datetime(years[0], 1, 1)
+            end = datetime(years[-1], 12, 31)
 
-        years = self.get_year_range()
+        # Build quarterly chunks covering the date range
         periods = []
+        # Quarter boundaries: (month_start, month_end, last_day)
+        quarters = [(1, 3, 31), (4, 6, 30), (7, 9, 30), (10, 12, 31)]
 
-        for year in years:
-            # Q1: Jan 1 - Mar 31
-            periods.append((f"{year}-01-01", f"{year}-03-31"))
-            # Q2: Apr 1 - Jun 30
-            periods.append((f"{year}-04-01", f"{year}-06-30"))
-            # Q3: Jul 1 - Sep 30
-            periods.append((f"{year}-07-01", f"{year}-09-30"))
-            # Q4: Oct 1 - Dec 31
-            periods.append((f"{year}-10-01", f"{year}-12-31"))
+        current_year = start.year
+        while datetime(current_year, 1, 1) <= end:
+            for q_start_month, q_end_month, q_last_day in quarters:
+                q_start = datetime(current_year, q_start_month, 1)
+                q_end = datetime(current_year, q_end_month, q_last_day)
+
+                # Skip quarters entirely before start or after end
+                if q_end < start or q_start > end:
+                    continue
+
+                # Clamp to actual range
+                actual_start = max(q_start, start)
+                actual_end = min(q_end, end)
+
+                periods.append((
+                    actual_start.strftime("%Y-%m-%d"),
+                    actual_end.strftime("%Y-%m-%d"),
+                ))
+            current_year += 1
 
         return periods
 
@@ -98,6 +124,76 @@ class ARCOService:
         filename = f"era5_wind_{cell_id}_{start_year}_{start_month}-{end_month}.nc"
         return self.output_dir / filename
 
+    def _get_available_memory_bytes(self) -> int:
+        """Get available system memory in bytes."""
+        if _HAS_PSUTIL:
+            mem = psutil.virtual_memory()
+            print(f"  System RAM: {mem.total / 1024**3:.1f} GB total, "
+                  f"{mem.available / 1024**3:.1f} GB available")
+            return mem.available
+        else:
+            print("  Warning: psutil not installed, assuming 4 GB available RAM")
+            return 4 * 1024**3
+
+    def _get_max_chunk_hours(self) -> int:
+        """Calculate max hours per sub-chunk to stay within half of available RAM."""
+        available = self._get_available_memory_bytes()
+        usable = available // 2
+
+        max_hours = int(usable // _BYTES_PER_HOUR_GLOBAL)
+        # Round down to nearest day, clamp to [24 hours, 2160 hours (90 days)]
+        max_hours = max(24, min(max_hours, 2160))
+        max_hours = (max_hours // 24) * 24
+
+        print(f"  Max chunk size: {max_hours} hours ({max_hours // 24} days)")
+        return max_hours
+
+    def _split_period_into_sub_chunks(
+        self, start_date: str, end_date: str, max_hours: int
+    ) -> List[tuple]:
+        """Split a date range into sub-chunks that each fit in memory."""
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+        end = datetime.strptime(end_date, "%Y-%m-%d")
+        max_days = max_hours // 24
+
+        chunks = []
+        current = start
+        while current <= end:
+            chunk_end = min(current + timedelta(days=max_days - 1), end)
+            chunks.append((
+                current.strftime("%Y-%m-%d"),
+                chunk_end.strftime("%Y-%m-%d"),
+            ))
+            current = chunk_end + timedelta(days=1)
+
+        return chunks
+
+    def _fetch_global_subset(self, ds, start_date: str, end_date: str):
+        """Select a global time slice, rename variables, and convert coordinates."""
+        subset = ds.sel(time=slice(start_date, end_date))[[ARCO_VAR_U10, ARCO_VAR_V10]]
+
+        time_count = len(subset.time)
+        lat_count = len(subset.latitude)
+        lon_count = len(subset.longitude)
+        estimated_gb = (time_count * lat_count * lon_count * 2 * 4) / 1024**3
+        print(f"      Size: {time_count} hours x {lat_count} lat x {lon_count} lon "
+              f"(~{estimated_gb:.1f} GB uncompressed)")
+
+        subset = subset.rename({
+            ARCO_VAR_U10: "u10",
+            ARCO_VAR_V10: "v10",
+            "time": "valid_time",
+        })
+
+        # Convert longitude from 0-360 to -180 to 180
+        lons = subset.longitude.values
+        if lons.max() > 180:
+            new_lons = np.where(lons > 180, lons - 360, lons)
+            subset = subset.assign_coords(longitude=new_lons)
+            subset = subset.sortby("longitude")
+
+        return subset
+
     def download_global_period(
         self,
         start_date: str,
@@ -109,6 +205,9 @@ class ARCOService:
 
         Downloads the entire globe (no spatial slicing) which is efficient
         since ARCO Zarr chunks are (1, 721, 1440) = 1 hour x full globe.
+
+        Automatically splits into memory-safe sub-chunks based on available
+        RAM (uses at most half of available memory per sub-chunk).
 
         Args:
             start_date: Start date in 'YYYY-MM-DD' format
@@ -142,33 +241,50 @@ class ARCOService:
             print(f"    Warning: Requested end {end_date} after dataset end {ds_end}")
             actual_end = ds_end
 
-        # Select time range only - full globe (no spatial slicing)
-        subset = ds.sel(time=slice(actual_start, actual_end))[[ARCO_VAR_U10, ARCO_VAR_V10]]
+        # Calculate memory-safe sub-chunk size
+        max_hours = self._get_max_chunk_hours()
+        sub_chunks = self._split_period_into_sub_chunks(actual_start, actual_end, max_hours)
 
-        # Print size info
-        time_count = len(subset.time)
-        lat_count = len(subset.latitude)
-        lon_count = len(subset.longitude)
-        estimated_gb = (time_count * lat_count * lon_count * 2 * 4) / 1024**3
-        print(f"    Size: {time_count} hours x {lat_count} lat x {lon_count} lon (~{estimated_gb:.1f} GB uncompressed)")
+        if len(sub_chunks) == 1:
+            # Single chunk fits in memory — download directly
+            print(f"    Downloading and saving to {output_path.name}...")
+            subset = self._fetch_global_subset(ds, actual_start, actual_end)
+            subset.load()
+            subset.to_netcdf(output_path)
+            del subset
+        else:
+            # Multiple sub-chunks needed — download to temp files, then combine
+            print(f"    Splitting into {len(sub_chunks)} sub-chunks to fit in memory")
+            temp_files = []
+            try:
+                for i, (sub_start, sub_end) in enumerate(sub_chunks):
+                    print(f"    Sub-chunk {i + 1}/{len(sub_chunks)}: {sub_start} to {sub_end}")
+                    subset = self._fetch_global_subset(ds, sub_start, sub_end)
+                    subset.load()
 
-        # Rename variables and time coordinate to match expected format
-        subset = subset.rename({
-            ARCO_VAR_U10: "u10",
-            ARCO_VAR_V10: "v10",
-            "time": "valid_time",
-        })
+                    temp_path = output_path.parent / f"{output_path.stem}_part{i}.nc"
+                    subset.to_netcdf(temp_path)
+                    chunk_mb = temp_path.stat().st_size / 1024**2
+                    print(f"      Saved temp: {chunk_mb:.0f} MB")
+                    del subset
 
-        # Convert longitude from 0-360 to -180 to 180
-        lons = subset.longitude.values
-        if lons.max() > 180:
-            new_lons = np.where(lons > 180, lons - 360, lons)
-            subset = subset.assign_coords(longitude=new_lons)
-            subset = subset.sortby("longitude")
+                    temp_files.append(temp_path)
 
-        # Save to NetCDF - this triggers the download from GCS
-        print(f"    Downloading and saving to {output_path.name}...")
-        subset.to_netcdf(output_path)
+                # Combine temp files into final output using dask to stream
+                print(f"    Combining {len(temp_files)} parts into {output_path.name}...")
+                import dask
+                combined = xr.open_mfdataset(
+                    [str(f) for f in temp_files],
+                    chunks={'valid_time': max_hours},
+                )
+                with dask.config.set(scheduler='synchronous'):
+                    combined.to_netcdf(output_path)
+                combined.close()
+            finally:
+                # Cleanup temp files
+                for f in temp_files:
+                    if f.exists():
+                        f.unlink()
 
         file_size_gb = output_path.stat().st_size / 1024**3
         print(f"    Saved: {file_size_gb:.2f} GB")
