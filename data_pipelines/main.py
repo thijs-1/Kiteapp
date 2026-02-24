@@ -464,10 +464,11 @@ class PipelineOrchestrator:
                 longitude=longitude,
             )
 
-            # Save
-            if not has_1d:
+            # Save (always save when force-processing)
+            force = not self.skip_existing_histograms
+            if not has_1d or force:
                 self.add_histogram_1d(spot_id, hist_1d)
-            if not has_2d:
+            if not has_2d or force:
                 self.save_histogram_2d(spot_id, hist_2d)
 
             stats["spots_processed"] += 1
@@ -540,9 +541,10 @@ class PipelineOrchestrator:
                     longitude=spot.longitude,
                 )
 
-                if not has_1d:
+                force = not self.skip_existing_histograms
+                if not has_1d or force:
                     self.add_histogram_1d(spot.spot_id, hist_1d)
-                if not has_2d:
+                if not has_2d or force:
                     self.save_histogram_2d(spot.spot_id, hist_2d)
 
                 stats["spots_processed"] += 1
