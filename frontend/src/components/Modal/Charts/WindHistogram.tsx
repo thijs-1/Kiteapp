@@ -109,13 +109,23 @@ export function WindHistogram({ spotId }: Props) {
     return `${bin}-${next}`;
   });
 
-  // Create datasets for each wind bin (stacked)
+  // Compute average counts per bin per time period
+  const avgCounts = sortedKeys.map((key) => {
+    const histograms = groupedData[key];
+    return binLabels.map((_, binIdx) =>
+      histograms.reduce((sum, h) => sum + (h[binIdx] || 0), 0) / histograms.length
+    );
+  });
+
+  // Compute totals per time period for normalization
+  const totals = avgCounts.map((bins) => bins.reduce((sum, v) => sum + v, 0));
+
+  // Create datasets for each wind bin (stacked, normalized to %)
   const datasets = binLabels.map((label, binIdx) => ({
     label: `${label} kts`,
-    data: sortedKeys.map((key) => {
-      const histograms = groupedData[key];
-      const avgCount = histograms.reduce((sum, h) => sum + (h[binIdx] || 0), 0) / histograms.length;
-      return avgCount;
+    data: sortedKeys.map((_, keyIdx) => {
+      const total = totals[keyIdx];
+      return total > 0 ? (avgCounts[keyIdx][binIdx] / total) * 100 : 0;
     }),
     backgroundColor: WIND_COLORS[binIdx] || '#999',
   }));
@@ -140,7 +150,7 @@ export function WindHistogram({ spotId }: Props) {
       tooltip: {
         callbacks: {
           label: (item) => {
-            return `${item.dataset.label}: ${(item.raw as number).toFixed(1)}`;
+            return `${item.dataset.label}: ${(item.raw as number).toFixed(1)}%`;
           },
         },
       },
@@ -161,8 +171,9 @@ export function WindHistogram({ spotId }: Props) {
         stacked: true,
         title: {
           display: true,
-          text: 'Observations',
+          text: '% of observations',
         },
+        max: 100,
       },
     },
   };
