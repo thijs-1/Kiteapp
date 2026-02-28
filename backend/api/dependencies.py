@@ -51,8 +51,9 @@ def get_timeseries_repository() -> TimeseriesRepository:
     return TimeseriesRepository()
 
 
+@lru_cache()
 def get_daily_wind_service() -> DailyWindService:
-    """Get daily wind service instance."""
+    """Get cached daily wind service instance."""
     return DailyWindService(
         spot_repo=get_spot_repository(),
         timeseries_repo=get_timeseries_repository(),
