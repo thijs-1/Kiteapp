@@ -133,8 +133,9 @@ export function WindRose({ spotId }: Props) {
         display: !isMobile,
         position: 'right' as const,
         labels: {
-          boxWidth: 12,
+          boxWidth: 10,
           font: { size: 9 },
+          padding: 5,
         },
       },
       tooltip: {

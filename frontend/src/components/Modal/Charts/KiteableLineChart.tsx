@@ -124,8 +124,11 @@ export function KiteableLineChart({ spotId }: Props) {
         beginAtZero: true,
         max: 100,
         title: {
-          display: true,
+          display: !isMobile,
           text: 'Kiteable %',
+        },
+        ticks: {
+          font: { size: isMobile ? 9 : 11 },
         },
       },
       x: {
@@ -135,6 +138,7 @@ export function KiteableLineChart({ spotId }: Props) {
         ticks: {
           autoSkip: false,
           maxRotation: 0,
+          font: { size: isMobile ? 9 : 11 },
           callback: function (_value: unknown, index: number) {
             const total = labels.length;
             const maxLabels = isMobile ? 4 : 6;

@@ -1,4 +1,5 @@
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
+import { Chart as ChartJS } from 'chart.js';
 import { KiteableLineChart } from './Charts/KiteableLineChart';
 import { WindHistogram } from './Charts/WindHistogram';
 import { WindRose } from './Charts/WindRose';
@@ -114,6 +115,24 @@ export function Carousel({ spotId }: CarouselProps) {
     touchStartY.current = null;
   }, []);
 
+  const chartContainerRef = useRef<HTMLDivElement>(null);
+
+  // When switching charts, trigger Chart.js resize on the newly visible chart.
+  // Hidden charts (visibility: hidden) may have stale dimensions if a resize
+  // occurred while they were invisible.
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (!chartContainerRef.current) return;
+      const panel = chartContainerRef.current.querySelector(
+        `[data-chart-index="${activeIndex}"] canvas`
+      );
+      if (panel) {
+        ChartJS.getChart(panel as HTMLCanvasElement)?.resize();
+      }
+    }, 220); // slightly after the 200ms opacity transition
+    return () => clearTimeout(timer);
+  }, [activeIndex]);
+
   // Memoize chart elements so invisible charts don't re-render on navigation
   const charts = useMemo(() => [
     <MemoKiteableLineChart key={0} spotId={spotId} />,
@@ -130,8 +149,8 @@ export function Carousel({ spotId }: CarouselProps) {
       onTouchCancel={handleTouchCancel}
     >
       {/* Chart title with page indicator */}
-      <div className="flex items-center justify-center gap-2 mb-2">
-        <h3 className="text-lg font-semibold text-gray-700">
+      <div className="flex items-center justify-center gap-2 mb-1 sm:mb-2">
+        <h3 className="text-base sm:text-lg font-semibold text-gray-700">
           {CHART_TITLES[activeIndex]}
         </h3>
         <span className="text-sm text-gray-400">{activeIndex + 1}/{CHART_TITLES.length}</span>
@@ -163,10 +182,11 @@ export function Carousel({ spotId }: CarouselProps) {
         </button>
 
         {/* Chart — all charts stay mounted, only active one visible */}
-        <div className="flex-1 h-full min-w-0 relative">
+        <div ref={chartContainerRef} className="flex-1 h-full min-w-0 relative">
           {charts.map((chart, index) => (
             <div
               key={index}
+              data-chart-index={index}
               className={`absolute inset-0 transition-[opacity,visibility] duration-200 ${
                 index === activeIndex
                   ? 'opacity-100 visible'
@@ -202,17 +222,17 @@ export function Carousel({ spotId }: CarouselProps) {
         </button>
       </div>
 
-      {/* Dot indicators - 44px touch targets with visual dot inside */}
-      <div className="flex justify-center gap-1 pt-2 sm:pt-4">
+      {/* Dot indicators - touch-friendly targets */}
+      <div className="flex justify-center gap-0.5 sm:gap-1 pt-1 sm:pt-3">
         {CHART_TITLES.map((_, index) => (
           <button
             key={index}
             onClick={() => setActiveIndex(index)}
-            className="w-11 h-11 flex items-center justify-center touch-manipulation"
+            className="w-9 h-9 sm:w-11 sm:h-11 flex items-center justify-center touch-manipulation"
             aria-label={`Go to ${CHART_TITLES[index]}`}
           >
             <span
-              className={`w-3 h-3 rounded-full transition-colors ${
+              className={`w-2.5 h-2.5 sm:w-3 sm:h-3 rounded-full transition-colors ${
                 index === activeIndex ? 'bg-kite' : 'bg-gray-300'
               }`}
             />

@@ -105,11 +105,12 @@ export function DailyWindChart({ spotId }: Props) {
         min: minHour,
         max: maxHour,
         title: {
-          display: true,
+          display: !isMobile,
           text: 'Local Time',
         },
         ticks: {
           stepSize: isMobile ? 3 : 2,
+          font: { size: isMobile ? 9 : 11 },
           callback: (value) => formatHour(value as number),
         },
         grid: {
@@ -119,8 +120,11 @@ export function DailyWindChart({ spotId }: Props) {
       y: {
         beginAtZero: true,
         title: {
-          display: true,
+          display: !isMobile,
           text: 'Wind (kts)',
+        },
+        ticks: {
+          font: { size: isMobile ? 9 : 11 },
         },
       },
     },

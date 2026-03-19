@@ -143,8 +143,9 @@ export function WindHistogram({ spotId }: Props) {
         display: !isMobile,
         position: 'right' as const,
         labels: {
-          boxWidth: 12,
-          font: { size: 10 },
+          boxWidth: 10,
+          font: { size: 9 },
+          padding: 6,
         },
       },
       tooltip: {
@@ -170,8 +171,11 @@ export function WindHistogram({ spotId }: Props) {
       y: {
         stacked: true,
         title: {
-          display: true,
+          display: !isMobile,
           text: '% of observations',
+        },
+        ticks: {
+          font: { size: isMobile ? 9 : 11 },
         },
         max: 100,
       },

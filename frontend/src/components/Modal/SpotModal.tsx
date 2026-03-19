@@ -40,7 +40,7 @@ export function SpotModal() {
         className={`bg-white flex flex-col shadow-2xl ${
           isMobile
             ? 'w-full h-full rounded-none'
-            : 'rounded-xl w-full max-w-4xl h-[80vh]'
+            : 'rounded-xl w-full max-w-4xl h-[85vh] max-h-[700px] sm:max-h-[800px] lg:max-h-none'
         }`}
         onClick={(e) => e.stopPropagation()}
       >
@@ -80,7 +80,7 @@ export function SpotModal() {
         </div>
 
         {/* Chart carousel */}
-        <div className="flex-1 p-3 sm:p-4 overflow-hidden min-h-0">
+        <div className="flex-1 px-1 py-2 sm:p-4 overflow-hidden min-h-0">
           <Carousel spotId={selectedSpot.spot_id} />
         </div>
       </div>
