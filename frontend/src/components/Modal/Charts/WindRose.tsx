@@ -161,7 +161,10 @@ export function WindRose({ spotId }: Props) {
           },
         },
         grid: {
-          color: 'rgba(0, 0, 0, 0.1)',
+          color: 'rgba(0, 0, 0, 0.3)',
+        },
+        angleLines: {
+          color: 'rgba(0, 0, 0, 0.3)',
         },
       },
     },
