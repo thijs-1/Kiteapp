@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # API settings
     api_title: str = "Kiteapp API"
     api_version: str = "1.0.0"
-    cors_origins: list = ["http://localhost:5173", "http://localhost:3000"]
+    cors_origins: list = ["http://wheretokite.com"]
 
     # Default filter values
     default_wind_min: float = 0.0

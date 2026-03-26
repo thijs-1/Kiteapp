@@ -74,20 +74,41 @@ export function DailyWindChart({ spotId }: Props) {
     mergedPoints.push({ x: NaN, y: NaN });
   }
 
-  // Plugin: fill chart area white then use multiply compositing so overlapping
-  // lines compound to darker values — no extra draw calls, zero perf cost.
-  const multiplyPlugin = {
-    id: 'multiplyBlend',
+  // Plugin: draw each profile separately with multiply compositing so overlapping
+  // lines compound to darker values at high-density regions.
+  // The merged dataset is kept invisible purely for y-axis auto-scaling.
+  const renderPlugin = {
+    id: 'dailyWindLines',
     beforeDatasetsDraw(chart: ChartJS) {
-      const { ctx, chartArea } = chart;
+      const { ctx, chartArea, scales } = chart;
       if (!chartArea) return;
+
+      const xScale = scales.x;
+      const yScale = scales.y;
+
       ctx.save();
       ctx.fillStyle = '#ffffff';
       ctx.fillRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+      ctx.beginPath();
+      ctx.rect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+      ctx.clip();
       ctx.globalCompositeOperation = 'multiply';
-    },
-    afterDatasetsDraw(chart: ChartJS) {
-      chart.ctx.restore();
+      ctx.strokeStyle = `rgba(8, 145, 178, ${lineOpacity})`;
+      ctx.lineWidth = 1.5;
+      ctx.lineJoin = 'round';
+      ctx.lineCap = 'round';
+
+      for (const profile of data.profiles) {
+        if (profile.hours.length === 0) continue;
+        ctx.beginPath();
+        ctx.moveTo(xScale.getPixelForValue(profile.hours[0]), yScale.getPixelForValue(profile.strength[0]));
+        for (let i = 1; i < profile.hours.length; i++) {
+          ctx.lineTo(xScale.getPixelForValue(profile.hours[i]), yScale.getPixelForValue(profile.strength[i]));
+        }
+        ctx.stroke();
+      }
+
+      ctx.restore();
     },
   };
 
@@ -95,12 +116,10 @@ export function DailyWindChart({ spotId }: Props) {
     {
       label: '',
       data: mergedPoints,
-      showLine: true,
-      borderColor: `rgba(8, 145, 178, ${lineOpacity})`,
-      borderWidth: 1.5,
+      showLine: false,
+      borderColor: 'transparent' as const,
       pointRadius: 0,
       pointHoverRadius: 0,
-      tension: 0.3,
     },
   ];
 
@@ -161,7 +180,7 @@ export function DailyWindChart({ spotId }: Props) {
         {formatDateRange(data.profiles[0].date, data.profiles[data.profiles.length - 1].date)}
       </div>
       <div className="flex-1 min-h-0">
-        <Scatter data={{ datasets }} options={options} plugins={[multiplyPlugin]} />
+        <Scatter data={{ datasets }} options={options} plugins={[renderPlugin]} />
       </div>
     </div>
   );
