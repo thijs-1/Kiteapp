@@ -62,7 +62,7 @@ export function DailyWindChart({ spotId }: Props) {
     );
   }
 
-  const lineOpacity = Math.max(0.05, Math.min(0.25, 2.0 / Math.sqrt(data.profiles.length)));
+  const lineOpacity = Math.max(0.07, Math.min(0.35, 3.0 / Math.sqrt(data.profiles.length)));
 
   // Merge all profiles into a single dataset with NaN separators for line breaks.
   // This avoids creating hundreds of Chart.js datasets (one per day) which is very slow.
@@ -73,6 +73,23 @@ export function DailyWindChart({ spotId }: Props) {
     }
     mergedPoints.push({ x: NaN, y: NaN });
   }
+
+  // Plugin: fill chart area white then use multiply compositing so overlapping
+  // lines compound to darker values — no extra draw calls, zero perf cost.
+  const multiplyPlugin = {
+    id: 'multiplyBlend',
+    beforeDatasetsDraw(chart: ChartJS) {
+      const { ctx, chartArea } = chart;
+      if (!chartArea) return;
+      ctx.save();
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(chartArea.left, chartArea.top, chartArea.width, chartArea.height);
+      ctx.globalCompositeOperation = 'multiply';
+    },
+    afterDatasetsDraw(chart: ChartJS) {
+      chart.ctx.restore();
+    },
+  };
 
   const datasets = [
     {
@@ -144,7 +161,7 @@ export function DailyWindChart({ spotId }: Props) {
         {formatDateRange(data.profiles[0].date, data.profiles[data.profiles.length - 1].date)}
       </div>
       <div className="flex-1 min-h-0">
-        <Scatter data={{ datasets }} options={options} />
+        <Scatter data={{ datasets }} options={options} plugins={[multiplyPlugin]} />
       </div>
     </div>
   );
