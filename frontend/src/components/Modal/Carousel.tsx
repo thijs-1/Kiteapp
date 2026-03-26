@@ -27,6 +27,8 @@ const SWIPE_THRESHOLD = 50;
 export function Carousel({ spotId }: CarouselProps) {
   // Start with line chart (index 0)
   const [activeIndex, setActiveIndex] = useState(0);
+  // Track which charts have been visited to enable lazy mounting
+  const [mountedCharts, setMountedCharts] = useState(new Set([0]));
   const touchStartX = useRef<number | null>(null);
   const touchStartY = useRef<number | null>(null);
 
@@ -55,15 +57,25 @@ export function Carousel({ spotId }: CarouselProps) {
     }, 150);
   }, []);
 
+  const navigateTo = useCallback((index: number) => {
+    setActiveIndex(index);
+    setMountedCharts((prev) => {
+      if (prev.has(index)) return prev;
+      const next = new Set(prev);
+      next.add(index);
+      return next;
+    });
+  }, []);
+
   const goToPrev = useCallback(() => {
     handleButtonPress('prev');
-    setActiveIndex((prev) => (prev - 1 + CHART_TITLES.length) % CHART_TITLES.length);
-  }, [handleButtonPress]);
+    navigateTo((activeIndex - 1 + CHART_TITLES.length) % CHART_TITLES.length);
+  }, [handleButtonPress, navigateTo, activeIndex]);
 
   const goToNext = useCallback(() => {
     handleButtonPress('next');
-    setActiveIndex((prev) => (prev + 1) % CHART_TITLES.length);
-  }, [handleButtonPress]);
+    navigateTo((activeIndex + 1) % CHART_TITLES.length);
+  }, [handleButtonPress, navigateTo, activeIndex]);
 
   // Keyboard navigation (Left/Right arrow keys)
   // Skip when focus is on interactive elements like sliders or inputs
@@ -162,7 +174,7 @@ export function Carousel({ spotId }: CarouselProps) {
           </svg>
         </button>
 
-        {/* Chart — all charts stay mounted, only active one visible */}
+        {/* Chart — only mount charts that have been visited, show only active one */}
         <div className="flex-1 h-full min-w-0 relative">
           {charts.map((chart, index) => (
             <div
@@ -173,7 +185,7 @@ export function Carousel({ spotId }: CarouselProps) {
                   : 'opacity-0 invisible pointer-events-none'
               }`}
             >
-              {chart}
+              {mountedCharts.has(index) ? chart : null}
             </div>
           ))}
         </div>
@@ -207,7 +219,7 @@ export function Carousel({ spotId }: CarouselProps) {
         {CHART_TITLES.map((_, index) => (
           <button
             key={index}
-            onClick={() => setActiveIndex(index)}
+            onClick={() => navigateTo(index)}
             className="w-11 h-11 flex items-center justify-center touch-manipulation"
             aria-label={`Go to ${CHART_TITLES[index]}`}
           >

@@ -64,16 +64,28 @@ export function DailyWindChart({ spotId }: Props) {
 
   const lineOpacity = Math.max(0.05, Math.min(0.25, 2.0 / Math.sqrt(data.profiles.length)));
 
-  const datasets = data.profiles.map((profile) => ({
-    label: profile.date,
-    data: profile.hours.map((h, i) => ({ x: h, y: profile.strength[i] })),
-    showLine: true,
-    borderColor: `rgba(8, 145, 178, ${lineOpacity})`,
-    borderWidth: 1.5,
-    pointRadius: 0,
-    pointHoverRadius: 0,
-    tension: 0.3,
-  }));
+  // Merge all profiles into a single dataset with NaN separators for line breaks.
+  // This avoids creating hundreds of Chart.js datasets (one per day) which is very slow.
+  const mergedPoints: { x: number; y: number }[] = [];
+  for (const profile of data.profiles) {
+    for (let i = 0; i < profile.hours.length; i++) {
+      mergedPoints.push({ x: profile.hours[i], y: profile.strength[i] });
+    }
+    mergedPoints.push({ x: NaN, y: NaN });
+  }
+
+  const datasets = [
+    {
+      label: '',
+      data: mergedPoints,
+      showLine: true,
+      borderColor: `rgba(8, 145, 178, ${lineOpacity})`,
+      borderWidth: 1.5,
+      pointRadius: 0,
+      pointHoverRadius: 0,
+      tension: 0.3,
+    },
+  ];
 
   // Find x-axis range from data
   let minHour = 24;
