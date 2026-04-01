@@ -53,9 +53,13 @@ export function SpotModal() {
       <div
         className={`bg-white flex flex-col shadow-2xl ${
           isMobile
-            ? 'w-full h-full rounded-none'
+            ? 'w-full h-[100dvh] rounded-none'
             : 'rounded-xl w-full max-w-4xl h-[80vh]'
         }`}
+        style={isMobile ? {
+          paddingTop: 'env(safe-area-inset-top)',
+          paddingBottom: 'env(safe-area-inset-bottom)',
+        } : undefined}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
