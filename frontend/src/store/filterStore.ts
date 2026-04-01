@@ -7,11 +7,13 @@ interface FilterState {
   startDate: string;
   endDate: string;
   minPercentage: number;
+  searchName: string;
 
   // Actions
   setWindRange: (min: number, max: number) => void;
   setDateRange: (start: string, end: string) => void;
   setMinPercentage: (percentage: number) => void;
+  setSearchName: (name: string) => void;
   resetFilters: () => void;
 }
 
@@ -21,6 +23,7 @@ export const defaultFilters = {
   startDate: '01-01',
   endDate: '12-31',
   minPercentage: 50,
+  searchName: '',
 };
 
 export const useFilterStore = create<FilterState>((set) => ({
@@ -31,6 +34,8 @@ export const useFilterStore = create<FilterState>((set) => ({
   setDateRange: (start, end) => set({ startDate: start, endDate: end }),
 
   setMinPercentage: (percentage) => set({ minPercentage: percentage }),
+
+  setSearchName: (name) => set({ searchName: name }),
 
   resetFilters: () => set(defaultFilters),
 }));

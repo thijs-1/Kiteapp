@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { SpotWithStats } from '../api/types';
+import { setSpotIdInUrl } from '../hooks/useSpotUrl';
 
 interface SpotState {
   // Spots data
@@ -23,7 +24,10 @@ export const useSpotStore = create<SpotState>((set) => ({
 
   setSpots: (spots) => set({ spots, error: null }),
 
-  selectSpot: (spot) => set({ selectedSpot: spot }),
+  selectSpot: (spot) => {
+    set({ selectedSpot: spot });
+    setSpotIdInUrl(spot?.spot_id ?? null);
+  },
 
   setLoading: (isLoading) => set({ isLoading }),
 

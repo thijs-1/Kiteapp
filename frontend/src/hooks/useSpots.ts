@@ -21,6 +21,7 @@ export function useFilteredSpots() {
           start_date: filters.startDate,
           end_date: filters.endDate,
           min_percentage: filters.minPercentage,
+          name: filters.searchName || undefined,
         },
         signal,
       );
@@ -38,6 +39,7 @@ export function useFilteredSpots() {
     filters.startDate,
     filters.endDate,
     filters.minPercentage,
+    filters.searchName,
     setSpots,
     setLoading,
     setError,
