@@ -140,11 +140,12 @@ export function WindHistogram({ spotId }: Props) {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: !isMobile,
-        position: 'right' as const,
+        display: true,
+        position: isMobile ? 'bottom' as const : 'right' as const,
         labels: {
-          boxWidth: 12,
-          font: { size: 10 },
+          boxWidth: isMobile ? 8 : 12,
+          font: { size: isMobile ? 8 : 10 },
+          padding: isMobile ? 4 : 10,
         },
       },
       tooltip: {
