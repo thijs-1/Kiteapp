@@ -6,7 +6,20 @@ import pandas as pd
 
 from backend.data.spot_repository import SpotRepository
 from backend.data.histogram_repository import HistogramRepository
-from backend.schemas.spot import SpotBase, SpotWithStats
+from backend.schemas.spot import NearestAirport, SpotBase, SpotWithStats
+
+
+def _build_airports(raw) -> List[NearestAirport]:
+    """Convert a raw list-of-dicts (or None/NaN) into ``NearestAirport`` models."""
+    if raw is None:
+        return []
+    try:
+        if not raw:
+            return []
+    except ValueError:
+        # Numpy/pandas containers may raise on truthiness; treat as present.
+        pass
+    return [NearestAirport(**a) for a in raw]
 
 
 class SpotService:
@@ -25,6 +38,7 @@ class SpotService:
     def get_all_spots(self) -> List[SpotBase]:
         """Get all spots as SpotBase objects."""
         df = self.spot_repo.get_all_spots()
+        has_airports = "nearest_airports" in df.columns
         return [
             SpotBase(
                 spot_id=row["spot_id"],
@@ -32,6 +46,7 @@ class SpotService:
                 latitude=row["latitude"],
                 longitude=row["longitude"],
                 country=row["country"],
+                nearest_airports=_build_airports(row["nearest_airports"]) if has_airports else [],
             )
             for _, row in df.iterrows()
         ]
@@ -41,12 +56,14 @@ class SpotService:
         row = self.spot_repo.get_spot_by_id(spot_id)
         if row is None:
             return None
+        airports = _build_airports(row["nearest_airports"]) if "nearest_airports" in row else []
         return SpotBase(
             spot_id=row["spot_id"],
             name=row["name"],
             latitude=row["latitude"],
             longitude=row["longitude"],
             country=row["country"],
+            nearest_airports=airports,
         )
 
     def calculate_kiteable_percentage(
@@ -206,6 +223,7 @@ class SpotService:
 
         histogram_spot_ids = self.histogram_repo.get_1d_spot_ids()
         spot_ids, names, latitudes, longitudes, countries = self.spot_repo.get_arrays()
+        nearest_airports_arr = self.spot_repo.get_nearest_airports_array()
         spot_id_to_idx = self.spot_repo.get_spot_id_to_idx()
 
         # Map histogram percentages to spot array order
@@ -241,6 +259,11 @@ class SpotService:
                 longitude=float(longitudes[i]),
                 country=str(countries[i]) if pd.notna(countries[i]) else None,
                 kiteable_percentage=round(float(pct_array[i]), 1),
+                nearest_airports=(
+                    _build_airports(nearest_airports_arr[i])
+                    if nearest_airports_arr is not None
+                    else []
+                ),
             )
             for i in result_idx
         ]

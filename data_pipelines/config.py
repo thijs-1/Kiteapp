@@ -18,6 +18,17 @@ DAYS_OF_YEAR = [f"{m:02d}-{d:02d}" for m in range(1, 13) for d in range(1, 32)
 INPUT_SPOTS_FILE = PROJECT_ROOT / "windguru_spots.pkl"
 ENRICHED_SPOTS_FILE = PROCESSED_DATA_DIR / "spots.pkl"
 
+# Airport reference data (pre-filtered: large_airport rows with IATA codes only)
+# and route cache. Source: OurAirports CSV, filtered at ingest to keep the file
+# small (~1.2K rows / ~100 KB instead of 85K rows / 12 MB).
+AIRPORTS_REFERENCE_FILE = DATA_DIR / "airports.csv"
+AIRPORT_ROUTES_CACHE_FILE = PROCESSED_DATA_DIR / "airport_routes_cache.json"
+OSRM_BASE_URL = "https://router.project-osrm.org/route/v1/driving"
+NEAREST_AIRPORTS_COUNT = 3
+HAVERSINE_SHORTLIST = 8
+OSRM_RATE_LIMIT_SECONDS = 1.0
+OSRM_REQUEST_TIMEOUT = 15
+
 # Wind strength bins: [0, 2.5, 5, 7.5, ..., 35, inf]
 WIND_BINS = list(np.arange(0, 37.5, 2.5)) + [float('inf')]
 
