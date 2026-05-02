@@ -25,12 +25,19 @@ from tqdm import tqdm
 from data_pipelines.config import (
     HAVERSINE_SHORTLIST,
     NEAREST_AIRPORTS_COUNT,
+    OSRM_MAX_ATTEMPTS,
     OSRM_RATE_LIMIT_SECONDS,
     OSRM_REQUEST_TIMEOUT,
+    OSRM_RETRY_BACKOFF_SECONDS,
 )
 
 
 EARTH_RADIUS_KM = 6371.0088
+OSRM_USER_AGENT = "kiteapp-airport-enrichment/1.0"
+
+
+class TransientOSRMError(Exception):
+    """OSRM request failed in a way that may succeed on retry (network, 5xx, 429, bad JSON)."""
 
 
 @dataclass(frozen=True)
@@ -98,6 +105,8 @@ class AirportService:
         shortlist_size: int = HAVERSINE_SHORTLIST,
         keep_count: int = NEAREST_AIRPORTS_COUNT,
         retry_failed: bool = False,
+        max_attempts: int = OSRM_MAX_ATTEMPTS,
+        retry_backoff_seconds: float = OSRM_RETRY_BACKOFF_SECONDS,
     ) -> None:
         self.airports = load_airports(airports_csv)
         self._lats = np.array([a.latitude for a in self.airports], dtype=np.float64)
@@ -109,6 +118,8 @@ class AirportService:
         self.shortlist_size = min(shortlist_size, len(self.airports))
         self.keep_count = keep_count
         self.retry_failed = retry_failed
+        self.max_attempts = max_attempts
+        self.retry_backoff_seconds = retry_backoff_seconds
         self._last_request_ts: Optional[float] = None
         self._cache: Dict[str, Optional[Dict[str, float]]] = self._load_cache()
 
@@ -147,28 +158,34 @@ class AirportService:
         if gap > 0:
             time.sleep(gap)
 
-    def osrm_route(
-        self,
-        spot_lat: float,
-        spot_lon: float,
-        ap_lat: float,
-        ap_lon: float,
-    ) -> Optional[Dict[str, float]]:
-        """Query OSRM for one route. Returns distance_km/duration_minutes or None."""
-        url = (
-            f"{self.osrm_base_url}/"
-            f"{spot_lon},{spot_lat};{ap_lon},{ap_lat}?overview=false"
-        )
+    def _osrm_request_once(self, url: str) -> Optional[Dict[str, float]]:
+        """Single OSRM request.
+
+        Returns a route dict on success, None on a definitive "no route" response
+        (4xx, OSRM ``code != "Ok"``, empty routes), or raises ``TransientOSRMError``
+        on retryable failures (network errors, 5xx, 429, malformed JSON).
+        """
         self._throttle()
         try:
-            resp = requests.get(url, timeout=self.timeout)
+            resp = requests.get(
+                url,
+                timeout=self.timeout,
+                headers={"User-Agent": OSRM_USER_AGENT},
+            )
+        except requests.RequestException as e:
             self._last_request_ts = time.monotonic()
-            if resp.status_code != 200:
-                return None
-            payload = resp.json()
-        except (requests.RequestException, ValueError):
-            self._last_request_ts = time.monotonic()
+            raise TransientOSRMError(str(e)) from e
+        self._last_request_ts = time.monotonic()
+
+        if resp.status_code == 429 or resp.status_code >= 500:
+            raise TransientOSRMError(f"HTTP {resp.status_code}")
+        if resp.status_code != 200:
             return None
+
+        try:
+            payload = resp.json()
+        except ValueError as e:
+            raise TransientOSRMError(f"Invalid JSON: {e}") from e
 
         if payload.get("code") != "Ok":
             return None
@@ -180,6 +197,38 @@ class AirportService:
             "distance_km": float(route["distance"]) / 1000.0,
             "duration_minutes": float(route["duration"]) / 60.0,
         }
+
+    def osrm_route(
+        self,
+        spot_lat: float,
+        spot_lon: float,
+        ap_lat: float,
+        ap_lon: float,
+    ) -> Tuple[Optional[Dict[str, float]], str]:
+        """Query OSRM for one route, retrying transient failures with exponential backoff.
+
+        Returns ``(route, status)`` where ``status`` is:
+            ``"ok"``       — route dict populated.
+            ``"no_route"`` — OSRM definitively reports no route. Safe to cache.
+            ``"transient"`` — retries exhausted on a recoverable failure. Caller
+                              should NOT cache; the next pipeline run will retry.
+        """
+        url = (
+            f"{self.osrm_base_url}/"
+            f"{spot_lon},{spot_lat};{ap_lon},{ap_lat}?overview=false"
+        )
+        backoff = self.retry_backoff_seconds
+        for attempt in range(self.max_attempts):
+            try:
+                route = self._osrm_request_once(url)
+            except TransientOSRMError:
+                if attempt + 1 < self.max_attempts:
+                    time.sleep(backoff)
+                    backoff *= 2
+                    continue
+                return None, "transient"
+            return (route, "ok") if route is not None else (None, "no_route")
+        return None, "transient"
 
     def compute_nearest_airports_for_spot(
         self,
@@ -196,7 +245,12 @@ class AirportService:
             if cache_key in self._cache:
                 route = self._cache[cache_key]
             else:
-                route = self.osrm_route(spot_lat, spot_lon, airport.latitude, airport.longitude)
+                route, status = self.osrm_route(
+                    spot_lat, spot_lon, airport.latitude, airport.longitude
+                )
+                if status == "transient":
+                    # Retries exhausted; skip caching so the next run can retry.
+                    continue
                 self._cache[cache_key] = route
 
             if route is None:

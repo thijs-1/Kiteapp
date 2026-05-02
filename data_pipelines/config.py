@@ -28,6 +28,8 @@ NEAREST_AIRPORTS_COUNT = 3
 HAVERSINE_SHORTLIST = 8
 OSRM_RATE_LIMIT_SECONDS = 1.0
 OSRM_REQUEST_TIMEOUT = 15
+OSRM_MAX_ATTEMPTS = 3  # Total attempts per OSRM call (1 initial + retries on transient failures)
+OSRM_RETRY_BACKOFF_SECONDS = 1.0  # Initial backoff; doubles each retry
 
 # Wind strength bins: [0, 2.5, 5, 7.5, ..., 35, inf]
 WIND_BINS = list(np.arange(0, 37.5, 2.5)) + [float('inf')]
