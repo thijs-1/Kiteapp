@@ -25,6 +25,8 @@ class SpotRepository:
         self._countries: Optional[np.ndarray] = None
         self._spot_id_to_idx: Dict[str, int] = {}
         self._names_lower: Optional[np.ndarray] = None
+        # Display-only column; not part of any filter mask, so kept separate.
+        self._nearest_airports: Optional[np.ndarray] = None
 
     def _load(self) -> None:
         """Load spots from pickle file."""
@@ -52,6 +54,10 @@ class SpotRepository:
         self._names_lower = np.array([
             str(n).lower() if pd.notna(n) else "" for n in self._names
         ])
+        if "nearest_airports" in self._df.columns:
+            self._nearest_airports = self._df["nearest_airports"].values
+        else:
+            self._nearest_airports = None
 
         self._loaded = True
 
@@ -59,6 +65,11 @@ class SpotRepository:
         """Get parallel arrays for fast filtering. Returns (spot_ids, names, latitudes, longitudes, countries)."""
         self._load()
         return self._spot_ids, self._names, self._latitudes, self._longitudes, self._countries
+
+    def get_nearest_airports_array(self) -> Optional[np.ndarray]:
+        """Object-dtype array of per-spot nearest_airports lists, or None if column absent."""
+        self._load()
+        return self._nearest_airports
 
     def get_spot_id_to_idx(self) -> Dict[str, int]:
         """Get mapping from spot_id to array index."""
