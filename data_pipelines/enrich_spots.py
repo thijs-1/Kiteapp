@@ -5,7 +5,7 @@ This is a one-time preprocessing step that:
 1. Loads the raw windguru_spots.pkl
 2. Generates unique spot IDs
 3. Adds country column via reverse geocoding
-4. Adds nearest_airports column (driving distance to 3 nearest large airports)
+4. Adds nearest_airports column (driving distance to N nearest large airports)
 5. Saves enriched data to data/processed/spots.pkl
 """
 import argparse
