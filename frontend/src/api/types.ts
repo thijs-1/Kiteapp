@@ -1,11 +1,23 @@
 // API types matching backend schemas
 
+export interface NearestAirport {
+  iata: string;
+  name: string;
+  municipality: string | null;
+  iso_country: string | null;
+  distance_km: number;
+  duration_minutes: number;
+  latitude: number | null;
+  longitude: number | null;
+}
+
 export interface Spot {
   spot_id: string;
   name: string;
   latitude: number;
   longitude: number;
   country: string | null;
+  nearest_airports: NearestAirport[];
 }
 
 export interface SpotWithStats extends Spot {
@@ -20,6 +32,7 @@ export interface SpotFilters {
   country?: string;
   name?: string;
   min_percentage: number;
+  max_airport_distance_km?: number;
 }
 
 export interface HistogramData {

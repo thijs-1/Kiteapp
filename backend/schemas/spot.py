@@ -13,6 +13,8 @@ class NearestAirport(BaseModel):
     iso_country: Optional[str] = None
     distance_km: float
     duration_minutes: float
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
 
 class SpotBase(BaseModel):

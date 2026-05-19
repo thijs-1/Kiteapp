@@ -6,11 +6,20 @@ import pandas as pd
 
 from backend.data.spot_repository import SpotRepository
 from backend.data.histogram_repository import HistogramRepository
+from backend.data.airport_lookup import AirportLookup
 from backend.schemas.spot import NearestAirport, SpotBase, SpotWithStats
 
 
+_AIRPORT_LOOKUP = AirportLookup()
+
+
 def _build_airports(raw) -> List[NearestAirport]:
-    """Convert a raw list-of-dicts (or None/NaN) into ``NearestAirport`` models."""
+    """Convert a raw list-of-dicts (or None/NaN) into ``NearestAirport`` models.
+
+    Each airport is enriched with ``latitude``/``longitude`` from the airports
+    CSV lookup when available; the spots pickle only stores IATA + driving
+    distance, so coordinates have to be joined in at request time.
+    """
     if raw is None:
         return []
     try:
@@ -19,7 +28,26 @@ def _build_airports(raw) -> List[NearestAirport]:
     except ValueError:
         # Numpy/pandas containers may raise on truthiness; treat as present.
         pass
-    return [NearestAirport(**a) for a in raw]
+    airports: List[NearestAirport] = []
+    for a in raw:
+        coords = _AIRPORT_LOOKUP.get(a.get("iata", ""))
+        if coords is not None and "latitude" not in a:
+            a = {**a, "latitude": coords[0], "longitude": coords[1]}
+        airports.append(NearestAirport(**a))
+    return airports
+
+
+def _min_airport_distance(raw) -> float:
+    """Smallest driving distance across a spot's nearest airports, or +inf if none."""
+    if raw is None:
+        return float("inf")
+    try:
+        if not raw:
+            return float("inf")
+    except ValueError:
+        pass
+    distances = [a["distance_km"] for a in raw if "distance_km" in a]
+    return min(distances) if distances else float("inf")
 
 
 class SpotService:
@@ -161,6 +189,7 @@ class SpotService:
         country: Optional[str] = None,
         name: Optional[str] = None,
         min_percentage: float = 75,
+        max_airport_distance_km: Optional[float] = None,
     ) -> List[SpotWithStats]:
         """
         Filter spots based on criteria using vectorized operations.
@@ -173,6 +202,8 @@ class SpotService:
             country: Filter by country code
             name: Filter by spot name (substring)
             min_percentage: Minimum kiteable percentage
+            max_airport_distance_km: If set, keep only spots whose nearest
+                airport is within this driving distance in km
 
         Returns:
             List of spots meeting criteria with their statistics
@@ -184,14 +215,14 @@ class SpotService:
         # Check result cache
         cache_key = (
             wind_min, wind_max, start_date, end_date,
-            country, name, min_percentage,
+            country, name, min_percentage, max_airport_distance_km,
         )
         if cache_key in self._filter_cache:
             return self._filter_cache[cache_key]
 
         result = self._filter_spots_uncached(
             wind_min, wind_max, start_date, end_date,
-            country, name, min_percentage,
+            country, name, min_percentage, max_airport_distance_km,
         )
 
         # Store in cache (bounded to prevent unbounded growth)
@@ -211,6 +242,7 @@ class SpotService:
         country: Optional[str],
         name: Optional[str],
         min_percentage: float,
+        max_airport_distance_km: Optional[float] = None,
     ) -> List[SpotWithStats]:
         """Core filtering logic using NumPy arrays (uncached)."""
         # Calculate percentages for ALL spots at once (vectorized) — returns arrays
@@ -241,6 +273,12 @@ class SpotService:
             mask &= self.spot_repo.get_country_mask(country)
         if name:
             mask &= self.spot_repo.get_name_mask(name)
+        if max_airport_distance_km is not None and nearest_airports_arr is not None:
+            airport_mask = np.array([
+                _min_airport_distance(a) <= max_airport_distance_km
+                for a in nearest_airports_arr
+            ])
+            mask &= airport_mask
 
         # Get passing indices, sort by percentage descending
         passing_idx = np.where(mask)[0]

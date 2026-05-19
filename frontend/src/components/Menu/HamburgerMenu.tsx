@@ -19,7 +19,8 @@ export function HamburgerMenu() {
     filters.startDate !== defaultFilters.startDate ||
     filters.endDate !== defaultFilters.endDate ||
     filters.minPercentage !== defaultFilters.minPercentage ||
-    filters.searchName !== defaultFilters.searchName;
+    filters.searchName !== defaultFilters.searchName ||
+    filters.maxAirportDistance !== defaultFilters.maxAirportDistance;
 
   // Close on Escape
   useEffect(() => {
