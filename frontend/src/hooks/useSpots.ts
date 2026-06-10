@@ -22,6 +22,7 @@ export function useFilteredSpots() {
           end_date: filters.endDate,
           min_percentage: filters.minPercentage,
           name: filters.searchName || undefined,
+          max_airport_distance_km: filters.maxAirportDistance,
         },
         signal,
       );
@@ -40,6 +41,7 @@ export function useFilteredSpots() {
     filters.endDate,
     filters.minPercentage,
     filters.searchName,
+    filters.maxAirportDistance,
     setSpots,
     setLoading,
     setError,

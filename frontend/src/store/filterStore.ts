@@ -8,14 +8,18 @@ interface FilterState {
   endDate: string;
   minPercentage: number;
   searchName: string;
+  maxAirportDistance: number; // km; AIRPORT_DISTANCE_NO_LIMIT means "no filter"
 
   // Actions
   setWindRange: (min: number, max: number) => void;
   setDateRange: (start: string, end: string) => void;
   setMinPercentage: (percentage: number) => void;
   setSearchName: (name: string) => void;
+  setMaxAirportDistance: (km: number) => void;
   resetFilters: () => void;
 }
+
+export const AIRPORT_DISTANCE_NO_LIMIT = 500;
 
 export const defaultFilters = {
   windMin: 15,
@@ -24,6 +28,7 @@ export const defaultFilters = {
   endDate: '12-31',
   minPercentage: 50,
   searchName: '',
+  maxAirportDistance: AIRPORT_DISTANCE_NO_LIMIT,
 };
 
 export const useFilterStore = create<FilterState>((set) => ({
@@ -36,6 +41,8 @@ export const useFilterStore = create<FilterState>((set) => ({
   setMinPercentage: (percentage) => set({ minPercentage: percentage }),
 
   setSearchName: (name) => set({ searchName: name }),
+
+  setMaxAirportDistance: (km) => set({ maxAirportDistance: km }),
 
   resetFilters: () => set(defaultFilters),
 }));

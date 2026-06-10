@@ -14,6 +14,10 @@ export const spotApi = {
       min_percentage: filters.min_percentage ?? 75,
       ...(filters.country && { country: filters.country }),
       ...(filters.name && { name: filters.name }),
+      ...(filters.max_airport_distance_km !== undefined &&
+        filters.max_airport_distance_km < 500 && {
+          max_airport_distance_km: filters.max_airport_distance_km,
+        }),
     };
     const { data } = await api.get<SpotWithStats[]>('/spots', { params, signal });
     return data;

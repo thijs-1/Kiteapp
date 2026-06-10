@@ -2,6 +2,7 @@ import { useEffect, useCallback, useState } from 'react';
 import { useSpotStore } from '../../store/spotStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
 import { Carousel } from './Carousel';
+import { SpotAirportMap } from './SpotAirportMap';
 
 export function SpotModal() {
   const { selectedSpot, selectSpot } = useSpotStore();
@@ -123,6 +124,31 @@ export function SpotModal() {
             </button>
           </div>
         </div>
+
+        {/* Airports section */}
+        {selectedSpot.nearest_airports.length > 0 && (
+          <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-100 space-y-2">
+            <SpotAirportMap spot={selectedSpot} />
+            <div className="flex gap-2 overflow-x-auto">
+              {selectedSpot.nearest_airports.map((airport) => (
+                <div
+                  key={airport.iata}
+                  className="flex-shrink-0 min-w-[140px] px-2 py-1 bg-gray-50 rounded-md border border-gray-100"
+                >
+                  <div className="text-xs font-semibold text-gray-800">
+                    <span className="text-kite">{airport.iata}</span>
+                    <span className="ml-1 text-gray-700 font-normal truncate inline-block max-w-[80px] align-bottom">
+                      {airport.name}
+                    </span>
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {airport.distance_km.toFixed(0)} km · ~{Math.round(airport.duration_minutes)} min
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Chart carousel */}
         <div className="flex-1 p-3 sm:p-4 overflow-hidden min-h-0">

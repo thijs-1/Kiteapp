@@ -2,6 +2,7 @@ import { SearchInput } from './SearchInput';
 import { WindRangeSlider } from './WindRangeSlider';
 import { DateRangePicker } from './DateRangePicker';
 import { PercentageSlider } from './PercentageSlider';
+import { AirportDistanceSlider } from './AirportDistanceSlider';
 
 export function FilterPanel() {
   return (
@@ -12,6 +13,7 @@ export function FilterPanel() {
 
       <WindRangeSlider />
       <PercentageSlider />
+      <AirportDistanceSlider />
 
       <div className="border-t border-gray-100" />
 

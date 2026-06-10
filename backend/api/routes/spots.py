@@ -18,6 +18,9 @@ async def get_filtered_spots(
     country: Optional[str] = Query(None, description="Filter by country code"),
     name: Optional[str] = Query(None, description="Filter by spot name"),
     min_percentage: float = Query(75, ge=0, le=100, description="Minimum kiteable percentage"),
+    max_airport_distance_km: Optional[float] = Query(
+        None, ge=0, description="Keep only spots whose nearest airport is within this many km"
+    ),
     spot_service: SpotService = Depends(get_spot_service),
 ) -> List[SpotWithStats]:
     """
@@ -34,6 +37,7 @@ async def get_filtered_spots(
         country=country,
         name=name,
         min_percentage=min_percentage,
+        max_airport_distance_km=max_airport_distance_km,
     )
 
 
