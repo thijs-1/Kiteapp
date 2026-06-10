@@ -1,14 +1,17 @@
 """Service for computing driving distance from spots to nearest airports.
 
 Pipeline:
-1. Load the pre-filtered airports CSV (large_airport rows with IATA codes).
+1. Load the pre-filtered airports CSV (large/medium airports with scheduled
+   service and IATA codes; see scripts/build_airports_csv.py).
 2. For each spot, take HAVERSINE_SHORTLIST nearest airports by great-circle distance.
-3. Query OSRM public demo server for driving distance/duration to each candidate.
-4. Keep the NEAREST_AIRPORTS_COUNT shortest by driving distance.
+3. Query the OSRM /table service for driving distance/duration from the spot to
+   all uncached candidates in a single request.
+4. Keep the NEAREST_AIRPORTS_COUNT shortest by driving duration.
 
 Routes are cached on disk so the run is resumable. A null cache entry means a
-previous attempt failed (no route, OSRM error); these are skipped on rerun
-unless ``retry_failed=True``.
+previous attempt definitively found no route; these are skipped on rerun
+unless ``retry_failed=True``. Transient failures (network, 5xx, 429) are never
+cached, so the next run retries them automatically.
 """
 import json
 import math
@@ -73,8 +76,8 @@ def haversine_km(
 def load_airports(csv_path: Path) -> List[AirportReference]:
     """Load the pre-filtered airports CSV.
 
-    The CSV is expected to already contain only large_airport rows with non-empty
-    IATA codes and valid coordinates (see scripts/build_airports_csv.py).
+    The CSV is expected to already contain only scheduled-service airports with
+    non-empty IATA codes and valid coordinates (see scripts/build_airports_csv.py).
     """
     df = pd.read_csv(csv_path)
     airports: List[AirportReference] = []
@@ -99,7 +102,7 @@ class AirportService:
         self,
         airports_csv: Path,
         cache_path: Path,
-        osrm_base_url: str,
+        osrm_table_url: str,
         rate_limit_seconds: float = OSRM_RATE_LIMIT_SECONDS,
         timeout: int = OSRM_REQUEST_TIMEOUT,
         shortlist_size: int = HAVERSINE_SHORTLIST,
@@ -112,7 +115,7 @@ class AirportService:
         self._lats = np.array([a.latitude for a in self.airports], dtype=np.float64)
         self._lons = np.array([a.longitude for a in self.airports], dtype=np.float64)
         self.cache_path = cache_path
-        self.osrm_base_url = osrm_base_url.rstrip("/")
+        self.osrm_table_url = osrm_table_url.rstrip("/")
         self.rate_limit_seconds = rate_limit_seconds
         self.timeout = timeout
         self.shortlist_size = min(shortlist_size, len(self.airports))
@@ -158,12 +161,13 @@ class AirportService:
         if gap > 0:
             time.sleep(gap)
 
-    def _osrm_request_once(self, url: str) -> Optional[Dict[str, float]]:
-        """Single OSRM request.
+    def _table_request_once(self, url: str, n_destinations: int) -> List[Optional[Dict[str, float]]]:
+        """Single OSRM /table request.
 
-        Returns a route dict on success, None on a definitive "no route" response
-        (4xx, OSRM ``code != "Ok"``, empty routes), or raises ``TransientOSRMError``
-        on retryable failures (network errors, 5xx, 429, malformed JSON).
+        Returns one entry per destination: a route dict, or None where OSRM
+        found no route (null matrix entry, or a definitive non-Ok response).
+        Raises ``TransientOSRMError`` on retryable failures (network errors,
+        5xx, 429, malformed JSON).
         """
         self._throttle()
         try:
@@ -180,7 +184,7 @@ class AirportService:
         if resp.status_code == 429 or resp.status_code >= 500:
             raise TransientOSRMError(f"HTTP {resp.status_code}")
         if resp.status_code != 200:
-            return None
+            return [None] * n_destinations
 
         try:
             payload = resp.json()
@@ -188,46 +192,60 @@ class AirportService:
             raise TransientOSRMError(f"Invalid JSON: {e}") from e
 
         if payload.get("code") != "Ok":
-            return None
-        routes = payload.get("routes") or []
-        if not routes:
-            return None
-        route = routes[0]
-        return {
-            "distance_km": float(route["distance"]) / 1000.0,
-            "duration_minutes": float(route["duration"]) / 60.0,
-        }
+            return [None] * n_destinations
+        distances = (payload.get("distances") or [[]])[0]
+        durations = (payload.get("durations") or [[]])[0]
+        if len(distances) != n_destinations or len(durations) != n_destinations:
+            raise TransientOSRMError(
+                f"Matrix shape mismatch: expected {n_destinations} destinations, "
+                f"got {len(distances)} distances / {len(durations)} durations"
+            )
 
-    def osrm_route(
+        results: List[Optional[Dict[str, float]]] = []
+        for dist, dur in zip(distances, durations):
+            if dist is None or dur is None:
+                results.append(None)
+            else:
+                results.append(
+                    {
+                        "distance_km": float(dist) / 1000.0,
+                        "duration_minutes": float(dur) / 60.0,
+                    }
+                )
+        return results
+
+    def osrm_table(
         self,
         spot_lat: float,
         spot_lon: float,
-        ap_lat: float,
-        ap_lon: float,
-    ) -> Tuple[Optional[Dict[str, float]], str]:
-        """Query OSRM for one route, retrying transient failures with exponential backoff.
+        airports: List[AirportReference],
+    ) -> Tuple[Optional[List[Optional[Dict[str, float]]]], str]:
+        """Query OSRM /table for spot -> airports routes, retrying transient failures.
 
-        Returns ``(route, status)`` where ``status`` is:
-            ``"ok"``       — route dict populated.
-            ``"no_route"`` — OSRM definitively reports no route. Safe to cache.
-            ``"transient"`` — retries exhausted on a recoverable failure. Caller
-                              should NOT cache; the next pipeline run will retry.
+        Returns ``(routes, status)`` where ``routes`` has one entry per airport
+        (route dict or None for no-route) and ``status`` is:
+            ``"ok"``        — routes populated; per-airport None means OSRM
+                              definitively found no route. Safe to cache.
+            ``"transient"`` — retries exhausted on a recoverable failure;
+                              ``routes`` is None. Caller should NOT cache; the
+                              next pipeline run will retry.
         """
+        coords = ";".join(
+            [f"{spot_lon},{spot_lat}"] + [f"{a.longitude},{a.latitude}" for a in airports]
+        )
+        destinations = ";".join(str(i + 1) for i in range(len(airports)))
         url = (
-            f"{self.osrm_base_url}/"
-            f"{spot_lon},{spot_lat};{ap_lon},{ap_lat}?overview=false"
+            f"{self.osrm_table_url}/{coords}"
+            f"?sources=0&destinations={destinations}&annotations=distance,duration"
         )
         backoff = self.retry_backoff_seconds
         for attempt in range(self.max_attempts):
             try:
-                route = self._osrm_request_once(url)
+                return self._table_request_once(url, len(airports)), "ok"
             except TransientOSRMError:
                 if attempt + 1 < self.max_attempts:
                     time.sleep(backoff)
                     backoff *= 2
-                    continue
-                return None, "transient"
-            return (route, "ok") if route is not None else (None, "no_route")
         return None, "transient"
 
     def compute_nearest_airports_for_spot(
@@ -236,26 +254,24 @@ class AirportService:
         spot_lat: float,
         spot_lon: float,
     ) -> List[Dict[str, object]]:
-        """Compute up to ``keep_count`` nearest airports by driving distance for one spot."""
+        """Compute up to ``keep_count`` nearest airports by driving duration for one spot."""
         candidates = self.shortlist_nearest(spot_lat, spot_lon)
+
+        # One /table request covers every uncached candidate for this spot.
+        misses = [a for a in candidates if f"{spot_id}:{a.iata}" not in self._cache]
+        if misses:
+            routes, status = self.osrm_table(spot_lat, spot_lon, misses)
+            if status == "ok":
+                for airport, route in zip(misses, routes):
+                    self._cache[f"{spot_id}:{airport.iata}"] = route
+            # On "transient" the misses stay uncached so the next run retries them.
+
         scored: List[Tuple[float, AirportReference, Dict[str, float]]] = []
-
         for airport in candidates:
-            cache_key = f"{spot_id}:{airport.iata}"
-            if cache_key in self._cache:
-                route = self._cache[cache_key]
-            else:
-                route, status = self.osrm_route(
-                    spot_lat, spot_lon, airport.latitude, airport.longitude
-                )
-                if status == "transient":
-                    # Retries exhausted; skip caching so the next run can retry.
-                    continue
-                self._cache[cache_key] = route
-
+            route = self._cache.get(f"{spot_id}:{airport.iata}")
             if route is None:
                 continue
-            scored.append((route["distance_km"], airport, route))
+            scored.append((route["duration_minutes"], airport, route))
 
         scored.sort(key=lambda item: item[0])
 
@@ -267,6 +283,8 @@ class AirportService:
                     "name": airport.name,
                     "municipality": airport.municipality,
                     "iso_country": airport.iso_country,
+                    "latitude": airport.latitude,
+                    "longitude": airport.longitude,
                     "distance_km": round(route["distance_km"], 2),
                     "duration_minutes": round(route["duration_minutes"], 1),
                 }

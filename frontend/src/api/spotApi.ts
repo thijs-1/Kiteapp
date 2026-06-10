@@ -1,5 +1,5 @@
 import { api } from './index';
-import type { Spot, SpotWithStats, SpotFilters } from './types';
+import type { Spot, SpotDetail, SpotsMeta, SpotWithStats, SpotFilters } from './types';
 
 export const spotApi = {
   /**
@@ -14,10 +14,9 @@ export const spotApi = {
       min_percentage: filters.min_percentage ?? 75,
       ...(filters.country && { country: filters.country }),
       ...(filters.name && { name: filters.name }),
-      ...(filters.max_airport_distance_km !== undefined &&
-        filters.max_airport_distance_km < 500 && {
-          max_airport_distance_km: filters.max_airport_distance_km,
-        }),
+      ...(filters.max_airport_distance_km !== undefined && {
+        max_airport_distance_km: filters.max_airport_distance_km,
+      }),
     };
     const { data } = await api.get<SpotWithStats[]>('/spots', { params, signal });
     return data;
@@ -32,10 +31,10 @@ export const spotApi = {
   },
 
   /**
-   * Get a single spot by ID
+   * Get a single spot by ID, including its nearest airports
    */
-  getSpot: async (spotId: string): Promise<Spot> => {
-    const { data } = await api.get<Spot>(`/spots/${spotId}`);
+  getSpot: async (spotId: string): Promise<SpotDetail> => {
+    const { data } = await api.get<SpotDetail>(`/spots/${spotId}`);
     return data;
   },
 
@@ -44,6 +43,14 @@ export const spotApi = {
    */
   getCountries: async (): Promise<string[]> => {
     const { data } = await api.get<string[]>('/spots/countries');
+    return data;
+  },
+
+  /**
+   * Get dataset-level metadata (e.g. whether airport data is available)
+   */
+  getMeta: async (): Promise<SpotsMeta> => {
+    const { data } = await api.get<SpotsMeta>('/spots/meta');
     return data;
   },
 };

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useCallback } from 'react';
-import { useFilterStore } from '../store/filterStore';
+import { useFilterStore, AIRPORT_DISTANCE_NO_LIMIT } from '../store/filterStore';
 import { useSpotStore } from '../store/spotStore';
 import { spotApi } from '../api/spotApi';
 
@@ -22,7 +22,10 @@ export function useFilteredSpots() {
           end_date: filters.endDate,
           min_percentage: filters.minPercentage,
           name: filters.searchName || undefined,
-          max_airport_distance_km: filters.maxAirportDistance,
+          max_airport_distance_km:
+            filters.maxAirportDistance >= AIRPORT_DISTANCE_NO_LIMIT
+              ? undefined
+              : filters.maxAirportDistance,
         },
         signal,
       );

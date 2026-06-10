@@ -17,11 +17,18 @@ export interface Spot {
   latitude: number;
   longitude: number;
   country: string | null;
-  nearest_airports: NearestAirport[];
 }
 
 export interface SpotWithStats extends Spot {
   kiteable_percentage: number;
+}
+
+export interface SpotDetail extends Spot {
+  nearest_airports: NearestAirport[];
+}
+
+export interface SpotsMeta {
+  has_airport_data: boolean;
 }
 
 export interface SpotFilters {
