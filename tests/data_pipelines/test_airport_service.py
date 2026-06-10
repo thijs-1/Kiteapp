@@ -129,7 +129,7 @@ def _make_service(tmp_path, airports_csv, **overrides):
     kwargs = dict(
         airports_csv=airports_csv,
         cache_path=tmp_path / "cache.json",
-        osrm_base_url="http://osrm.example/route/v1/driving",
+        osrm_table_url="http://osrm.example/table/v1/driving",
         rate_limit_seconds=0.0,
         timeout=5,
         shortlist_size=3,
@@ -142,6 +142,15 @@ def _make_service(tmp_path, airports_csv, **overrides):
     return AirportService(**kwargs)
 
 
+def _table_response(distances_m, durations_s):
+    """Build a one-source OSRM /table payload."""
+    return {
+        "code": "Ok",
+        "distances": [distances_m],
+        "durations": [durations_s],
+    }
+
+
 class TestShortlist:
     def test_returns_k_in_distance_order(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, shortlist_size=2, keep_count=2)
@@ -149,60 +158,113 @@ class TestShortlist:
         assert [a.iata for a in result] == ["ONE", "TWO"]
 
 
-class TestOSRMRoute:
+class TestOSRMTable:
+    def _airports(self, service, *iatas):
+        by_iata = {a.iata: a for a in service.airports}
+        return [by_iata[i] for i in iatas]
+
     def test_parses_response(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv)
         fake = MagicMock(status_code=200)
-        fake.json.return_value = {
-            "code": "Ok",
-            "routes": [{"distance": 12345.0, "duration": 1800.0}],
-        }
+        fake.json.return_value = _table_response([12345.0, 4000.0], [1800.0, 600.0])
         with patch.object(requests, "get", return_value=fake) as mock_get:
-            route, status = service.osrm_route(0.0, 0.0, 0.0, 1.0)
+            routes, status = service.osrm_table(
+                0.0, 15.0, self._airports(service, "ONE", "TWO")
+            )
         mock_get.assert_called_once()
         assert status == "ok"
-        assert route == {"distance_km": 12.345, "duration_minutes": 30.0}
+        assert routes == [
+            {"distance_km": 12.345, "duration_minutes": 30.0},
+            {"distance_km": 4.0, "duration_minutes": 10.0},
+        ]
+
+    def test_request_url_has_sources_destinations_annotations(self, tmp_path, airports_csv):
+        service = _make_service(tmp_path, airports_csv)
+        fake = MagicMock(status_code=200)
+        fake.json.return_value = _table_response([0.0, 0.0], [0.0, 0.0])
+        with patch.object(requests, "get", return_value=fake) as mock_get:
+            service.osrm_table(1.0, 15.0, self._airports(service, "ONE", "TWO"))
+        url = mock_get.call_args.args[0]
+        # Spot first as lon,lat then the two airports, source 0 -> destinations 1,2.
+        assert url.startswith("http://osrm.example/table/v1/driving/15.0,1.0;10.0,0.0;20.0,0.0?")
+        assert "sources=0" in url
+        assert "destinations=1;2" in url
+        assert "annotations=distance,duration" in url
+
+    def test_null_matrix_entry_means_no_route(self, tmp_path, airports_csv):
+        service = _make_service(tmp_path, airports_csv)
+        fake = MagicMock(status_code=200)
+        fake.json.return_value = _table_response([None, 4000.0], [None, 600.0])
+        with patch.object(requests, "get", return_value=fake):
+            routes, status = service.osrm_table(
+                0.0, 15.0, self._airports(service, "ONE", "TWO")
+            )
+        assert status == "ok"
+        assert routes == [None, {"distance_km": 4.0, "duration_minutes": 10.0}]
+
+    def test_non_ok_code_means_no_route_for_all(self, tmp_path, airports_csv):
+        service = _make_service(tmp_path, airports_csv)
+        fake = MagicMock(status_code=200)
+        fake.json.return_value = {"code": "NoTable"}
+        with patch.object(requests, "get", return_value=fake):
+            routes, status = service.osrm_table(
+                0.0, 15.0, self._airports(service, "ONE", "TWO")
+            )
+        assert status == "ok"
+        assert routes == [None, None]
 
     def test_5xx_is_transient(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         with patch.object(requests, "get", return_value=MagicMock(status_code=503)):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "transient")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert (routes, status) == (None, "transient")
 
     def test_429_is_transient(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         with patch.object(requests, "get", return_value=MagicMock(status_code=429)):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "transient")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert (routes, status) == (None, "transient")
 
     def test_4xx_is_no_route(self, tmp_path, airports_csv):
         # 4xx other than 429 means a definitive client-side problem (bad coordinates,
         # malformed URL); retrying won't help, so cache it as a negative.
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         with patch.object(requests, "get", return_value=MagicMock(status_code=400)):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "no_route")
+            routes, status = service.osrm_table(
+                0.0, 15.0, self._airports(service, "ONE", "TWO")
+            )
+        assert status == "ok"
+        assert routes == [None, None]
 
     def test_connection_error_is_transient(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         with patch.object(requests, "get", side_effect=requests.ConnectionError):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "transient")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert (routes, status) == (None, "transient")
 
     def test_timeout_is_transient(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         with patch.object(requests, "get", side_effect=requests.Timeout):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "transient")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert (routes, status) == (None, "transient")
 
     def test_invalid_json_is_transient(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         fake = MagicMock(status_code=200)
         fake.json.side_effect = ValueError("not json")
         with patch.object(requests, "get", return_value=fake):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "transient")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert (routes, status) == (None, "transient")
 
-    def test_returns_no_route_when_osrm_says_no_route(self, tmp_path, airports_csv):
+    def test_matrix_shape_mismatch_is_transient(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         fake = MagicMock(status_code=200)
-        fake.json.return_value = {"code": "NoRoute", "routes": []}
+        fake.json.return_value = _table_response([1000.0], [60.0])  # 1 entry, 2 expected
         with patch.object(requests, "get", return_value=fake):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "no_route")
+            routes, status = service.osrm_table(
+                0.0, 15.0, self._airports(service, "ONE", "TWO")
+            )
+        assert (routes, status) == (None, "transient")
 
     def test_retries_then_succeeds(self, tmp_path, airports_csv):
         service = _make_service(
@@ -210,17 +272,15 @@ class TestOSRMRoute:
             max_attempts=3, retry_backoff_seconds=0.5, rate_limit_seconds=0.0,
         )
         success = MagicMock(status_code=200)
-        success.json.return_value = {
-            "code": "Ok",
-            "routes": [{"distance": 1000.0, "duration": 60.0}],
-        }
+        success.json.return_value = _table_response([1000.0], [60.0])
         side_effects = [requests.ConnectionError(), requests.ConnectionError(), success]
         with (
             patch.object(requests, "get", side_effect=side_effects) as mock_get,
             patch("data_pipelines.services.airport_service.time.sleep") as mock_sleep,
         ):
-            route, status = service.osrm_route(0.0, 0.0, 0.0, 1.0)
-        assert (route, status) == ({"distance_km": 1.0, "duration_minutes": 1.0}, "ok")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert status == "ok"
+        assert routes == [{"distance_km": 1.0, "duration_minutes": 1.0}]
         assert mock_get.call_count == 3
         # Two backoff sleeps with exponential growth: 0.5, 1.0.
         assert [c.args[0] for c in mock_sleep.call_args_list] == [0.5, 1.0]
@@ -234,17 +294,16 @@ class TestOSRMRoute:
             patch.object(requests, "get", side_effect=requests.ConnectionError) as mock_get,
             patch("data_pipelines.services.airport_service.time.sleep"),
         ):
-            assert service.osrm_route(0.0, 0.0, 0.0, 1.0) == (None, "transient")
+            routes, status = service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
+        assert (routes, status) == (None, "transient")
         assert mock_get.call_count == 3
 
     def test_sends_user_agent(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, max_attempts=1)
         fake = MagicMock(status_code=200)
-        fake.json.return_value = {
-            "code": "Ok", "routes": [{"distance": 0.0, "duration": 0.0}],
-        }
+        fake.json.return_value = _table_response([0.0], [0.0])
         with patch.object(requests, "get", return_value=fake) as mock_get:
-            service.osrm_route(0.0, 0.0, 0.0, 1.0)
+            service.osrm_table(0.0, 15.0, self._airports(service, "ONE"))
         headers = mock_get.call_args.kwargs.get("headers") or {}
         assert "kiteapp" in headers.get("User-Agent", "").lower()
 
@@ -252,8 +311,9 @@ class TestOSRMRoute:
 class TestThrottle:
     def test_enforces_minimum_gap(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, rate_limit_seconds=1.0)
+        airport = service.airports[:1]
         # First call: no prior request, should not sleep.
-        # Second call: prior was 0.2s ago → must sleep ~0.8s.
+        # Second call: prior was 0.2s ago -> must sleep ~0.8s.
         times = iter([100.0, 100.2, 100.2])  # consumed by monotonic()
         with (
             patch("data_pipelines.services.airport_service.time.monotonic",
@@ -261,12 +321,11 @@ class TestThrottle:
             patch("data_pipelines.services.airport_service.time.sleep") as mock_sleep,
             patch.object(requests, "get", return_value=MagicMock(
                 status_code=200,
-                json=lambda: {"code": "Ok",
-                              "routes": [{"distance": 0.0, "duration": 0.0}]},
+                json=lambda: _table_response([0.0], [0.0]),
             )),
         ):
-            service.osrm_route(0.0, 0.0, 0.0, 1.0)  # call 1
-            service.osrm_route(0.0, 0.0, 0.0, 1.0)  # call 2 — must throttle
+            service.osrm_table(0.0, 15.0, airport)  # call 1
+            service.osrm_table(0.0, 15.0, airport)  # call 2 — must throttle
         assert mock_sleep.called
         slept = mock_sleep.call_args[0][0]
         assert slept == pytest.approx(0.8, abs=1e-6)
@@ -297,20 +356,39 @@ class TestCacheRoundtrip:
 
 
 class TestComputeForSpot:
-    def test_uses_cache_for_known_pairs(self, tmp_path, airports_csv):
+    def test_uses_cache_and_ranks_by_duration(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, shortlist_size=3, keep_count=3)
-        # All three pre-cached, no OSRM calls expected.
+        # All three pre-cached, no OSRM calls expected. Distance and duration
+        # orders disagree on purpose: ranking must follow duration.
         service._cache.update({
-            "spot1:ONE": {"distance_km": 30.0, "duration_minutes": 50.0},
-            "spot1:TWO": {"distance_km": 10.0, "duration_minutes": 20.0},
+            "spot1:ONE": {"distance_km": 10.0, "duration_minutes": 50.0},
+            "spot1:TWO": {"distance_km": 30.0, "duration_minutes": 20.0},
             "spot1:THR": {"distance_km": 20.0, "duration_minutes": 40.0},
         })
         with patch.object(requests, "get") as mock_get:
             result = service.compute_nearest_airports_for_spot("spot1", 0.0, 15.0)
         mock_get.assert_not_called()
-        # Sorted by driving distance: TWO (10) < THR (20) < ONE (30).
         assert [a["iata"] for a in result] == ["TWO", "THR", "ONE"]
-        assert result[0]["distance_km"] == 10.0
+        assert result[0]["duration_minutes"] == 20.0
+
+    def test_results_include_airport_coordinates(self, tmp_path, airports_csv):
+        service = _make_service(tmp_path, airports_csv, shortlist_size=3, keep_count=3)
+        service._cache["spot1:ONE"] = {"distance_km": 5.0, "duration_minutes": 7.0}
+        service._cache["spot1:TWO"] = None
+        service._cache["spot1:THR"] = None
+        result = service.compute_nearest_airports_for_spot("spot1", 0.0, 15.0)
+        assert result == [
+            {
+                "iata": "ONE",
+                "name": "One Intl",
+                "municipality": "A",
+                "iso_country": "AA",
+                "latitude": 0.0,
+                "longitude": 10.0,
+                "distance_km": 5.0,
+                "duration_minutes": 7.0,
+            }
+        ]
 
     def test_skips_failed_routes(self, tmp_path, airports_csv):
         service = _make_service(tmp_path, airports_csv, shortlist_size=3, keep_count=3)
@@ -340,14 +418,14 @@ class TestComputeForSpot:
         assert service._cache == {}
 
     def test_caches_definitive_no_route(self, tmp_path, airports_csv):
-        # OSRM definitively saying "NoRoute" should be cached as None so we don't
-        # re-query on the next run.
+        # OSRM definitively returning null matrix entries should be cached as
+        # None so we don't re-query on the next run.
         service = _make_service(
             tmp_path, airports_csv,
             shortlist_size=3, keep_count=3, max_attempts=1,
         )
         fake = MagicMock(status_code=200)
-        fake.json.return_value = {"code": "NoRoute", "routes": []}
+        fake.json.return_value = _table_response([None, None, None], [None, None, None])
         with patch.object(requests, "get", return_value=fake):
             result = service.compute_nearest_airports_for_spot("spot1", 0.0, 15.0)
         assert result == []
@@ -357,32 +435,37 @@ class TestComputeForSpot:
             "spot1:THR": None,
         }
 
-    def test_calls_osrm_only_for_misses(self, tmp_path, airports_csv):
+    def test_one_table_call_covers_all_misses(self, tmp_path, airports_csv):
         service = _make_service(
             tmp_path, airports_csv, shortlist_size=3, keep_count=3, max_attempts=1,
         )
         service._cache["spot1:ONE"] = {"distance_km": 5.0, "duration_minutes": 7.0}
 
-        responses = {
-            "TWO": {"code": "Ok", "routes": [{"distance": 10000.0, "duration": 600.0}]},
-            "THR": {"code": "Ok", "routes": [{"distance": 30000.0, "duration": 1800.0}]},
-        }
-
-        def fake_get(url, **kwargs):
-            # URL is .../driving/<spot_lon>,<spot_lat>;<ap_lon>,<ap_lat>?...
-            # Airport longitudes are 10/20/30; spot is at lon 15.0.
-            for iata, lon in (("TWO", "20.0"), ("THR", "30.0")):
-                if f";{lon}," in url:
-                    return MagicMock(status_code=200, json=lambda iata=iata: responses[iata])
-            raise AssertionError(f"unexpected URL: {url}")
-
-        with patch.object(requests, "get", side_effect=fake_get) as mock_get:
+        fake = MagicMock(status_code=200)
+        # Spot at lon 15: shortlist order ONE, TWO, THR -> misses TWO, THR.
+        fake.json.return_value = _table_response([10000.0, 30000.0], [600.0, 1800.0])
+        with patch.object(requests, "get", return_value=fake) as mock_get:
             result = service.compute_nearest_airports_for_spot("spot1", 0.0, 15.0)
-        assert mock_get.call_count == 2
+        mock_get.assert_called_once()
+        url = mock_get.call_args.args[0]
+        # Only the two misses appear as destinations (lon 20 and 30).
+        assert "20.0,0.0" in url and "30.0,0.0" in url and "10.0,0.0" not in url
         assert [a["iata"] for a in result] == ["ONE", "TWO", "THR"]
         # Cache is now populated for the misses.
         assert service._cache["spot1:TWO"]["distance_km"] == 10.0
         assert service._cache["spot1:THR"]["distance_km"] == 30.0
+
+    def test_fully_cached_spot_makes_no_requests(self, tmp_path, airports_csv):
+        service = _make_service(tmp_path, airports_csv, shortlist_size=3, keep_count=2)
+        service._cache.update({
+            "spot1:ONE": {"distance_km": 1.0, "duration_minutes": 1.0},
+            "spot1:TWO": None,
+            "spot1:THR": {"distance_km": 3.0, "duration_minutes": 3.0},
+        })
+        with patch.object(requests, "get") as mock_get:
+            result = service.compute_nearest_airports_for_spot("spot1", 0.0, 15.0)
+        mock_get.assert_not_called()
+        assert [a["iata"] for a in result] == ["ONE", "THR"]
 
 
 class TestComputeForDataframe:

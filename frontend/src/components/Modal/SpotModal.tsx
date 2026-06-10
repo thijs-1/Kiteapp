@@ -1,6 +1,9 @@
 import { useEffect, useCallback, useState } from 'react';
 import { useSpotStore } from '../../store/spotStore';
 import { useIsMobile } from '../../hooks/useIsMobile';
+import { spotApi } from '../../api/spotApi';
+import type { NearestAirport } from '../../api/types';
+import { formatDuration } from '../../utils/formatDuration';
 import { Carousel } from './Carousel';
 import { SpotAirportMap } from './SpotAirportMap';
 
@@ -8,8 +11,28 @@ export function SpotModal() {
   const { selectedSpot, selectSpot } = useSpotStore();
   const isMobile = useIsMobile();
   const [copied, setCopied] = useState(false);
+  const [airports, setAirports] = useState<NearestAirport[]>([]);
 
   const handleClose = useCallback(() => selectSpot(null), [selectSpot]);
+
+  // Airports live on the spot detail endpoint, not in the list payload.
+  const spotId = selectedSpot?.spot_id;
+  useEffect(() => {
+    setAirports([]);
+    if (!spotId) return;
+    let cancelled = false;
+    spotApi
+      .getSpot(spotId)
+      .then((detail) => {
+        if (!cancelled) setAirports(detail.nearest_airports);
+      })
+      .catch(() => {
+        // Charts are the main content; missing airports is not an error state.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [spotId]);
 
   const handleShare = useCallback(async () => {
     if (!selectedSpot) return;
@@ -126,11 +149,11 @@ export function SpotModal() {
         </div>
 
         {/* Airports section */}
-        {selectedSpot.nearest_airports.length > 0 && (
+        {airports.length > 0 && (
           <div className="px-3 sm:px-4 pt-3 pb-2 border-b border-gray-100 space-y-2">
-            <SpotAirportMap spot={selectedSpot} />
+            <SpotAirportMap spot={selectedSpot} airports={airports} />
             <div className="flex gap-2 overflow-x-auto">
-              {selectedSpot.nearest_airports.map((airport) => (
+              {airports.map((airport) => (
                 <div
                   key={airport.iata}
                   className="flex-shrink-0 min-w-[140px] px-2 py-1 bg-gray-50 rounded-md border border-gray-100"
@@ -142,7 +165,7 @@ export function SpotModal() {
                     </span>
                   </div>
                   <div className="text-xs text-gray-500">
-                    {airport.distance_km.toFixed(0)} km · ~{Math.round(airport.duration_minutes)} min
+                    {airport.distance_km.toFixed(0)} km · ~{formatDuration(airport.duration_minutes)}
                   </div>
                 </div>
               ))}

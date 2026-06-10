@@ -14,7 +14,6 @@ class Settings(BaseSettings):
     histograms_1d_file: Path = processed_dir / "histograms_1d.pkl"  # Single 3D array
     histograms_2d_dir: Path = processed_dir / "histograms_2d"
     timeseries_dir: Path = data_dir / "timeseries"
-    airports_file: Path = data_dir / "airports.csv"
 
     # API settings
     api_title: str = "Kiteapp API"

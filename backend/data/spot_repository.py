@@ -7,6 +7,22 @@ import pandas as pd
 from backend.config import settings
 
 
+def as_airport_list(raw) -> list:
+    """Coerce a ``nearest_airports`` cell (list, None, or NaN) to a plain list."""
+    if raw is None:
+        return []
+    if isinstance(raw, float):
+        # A bare float here is pandas' NaN for a missing value.
+        return []
+    try:
+        if not raw:
+            return []
+    except ValueError:
+        # Numpy/pandas containers may raise on truthiness; treat as present.
+        pass
+    return list(raw)
+
+
 class SpotRepository:
     """Repository for accessing spot data."""
 
@@ -25,8 +41,9 @@ class SpotRepository:
         self._countries: Optional[np.ndarray] = None
         self._spot_id_to_idx: Dict[str, int] = {}
         self._names_lower: Optional[np.ndarray] = None
-        # Display-only column; not part of any filter mask, so kept separate.
-        self._nearest_airports: Optional[np.ndarray] = None
+        # Min driving distance to any airport per spot (inf where none/unknown),
+        # precomputed so the airport filter is a vectorized comparison.
+        self._min_airport_distance_km: Optional[np.ndarray] = None
 
     def _load(self) -> None:
         """Load spots from pickle file."""
@@ -55,9 +72,16 @@ class SpotRepository:
             str(n).lower() if pd.notna(n) else "" for n in self._names
         ])
         if "nearest_airports" in self._df.columns:
-            self._nearest_airports = self._df["nearest_airports"].values
+            min_dist = np.full(len(self._df), np.inf, dtype=np.float32)
+            for i, raw in enumerate(self._df["nearest_airports"].values):
+                distances = [
+                    a["distance_km"] for a in as_airport_list(raw) if "distance_km" in a
+                ]
+                if distances:
+                    min_dist[i] = min(distances)
+            self._min_airport_distance_km = min_dist
         else:
-            self._nearest_airports = None
+            self._min_airport_distance_km = None
 
         self._loaded = True
 
@@ -66,10 +90,17 @@ class SpotRepository:
         self._load()
         return self._spot_ids, self._names, self._latitudes, self._longitudes, self._countries
 
-    def get_nearest_airports_array(self) -> Optional[np.ndarray]:
-        """Object-dtype array of per-spot nearest_airports lists, or None if column absent."""
+    def get_min_airport_distance_array(self) -> Optional[np.ndarray]:
+        """Per-spot min driving distance to an airport in km (inf where none), or None if column absent."""
         self._load()
-        return self._nearest_airports
+        return self._min_airport_distance_km
+
+    def has_airport_data(self) -> bool:
+        """Whether any spot carries nearest-airport data."""
+        self._load()
+        if self._min_airport_distance_km is None:
+            return False
+        return bool(np.isfinite(self._min_airport_distance_km).any())
 
     def get_spot_id_to_idx(self) -> Dict[str, int]:
         """Get mapping from spot_id to array index."""

@@ -4,50 +4,14 @@ from functools import lru_cache
 import numpy as np
 import pandas as pd
 
-from backend.data.spot_repository import SpotRepository
+from backend.data.spot_repository import SpotRepository, as_airport_list
 from backend.data.histogram_repository import HistogramRepository
-from backend.data.airport_lookup import AirportLookup
-from backend.schemas.spot import NearestAirport, SpotBase, SpotWithStats
-
-
-_AIRPORT_LOOKUP = AirportLookup()
+from backend.schemas.spot import NearestAirport, SpotBase, SpotDetail, SpotsMeta, SpotWithStats
 
 
 def _build_airports(raw) -> List[NearestAirport]:
-    """Convert a raw list-of-dicts (or None/NaN) into ``NearestAirport`` models.
-
-    Each airport is enriched with ``latitude``/``longitude`` from the airports
-    CSV lookup when available; the spots pickle only stores IATA + driving
-    distance, so coordinates have to be joined in at request time.
-    """
-    if raw is None:
-        return []
-    try:
-        if not raw:
-            return []
-    except ValueError:
-        # Numpy/pandas containers may raise on truthiness; treat as present.
-        pass
-    airports: List[NearestAirport] = []
-    for a in raw:
-        coords = _AIRPORT_LOOKUP.get(a.get("iata", ""))
-        if coords is not None and "latitude" not in a:
-            a = {**a, "latitude": coords[0], "longitude": coords[1]}
-        airports.append(NearestAirport(**a))
-    return airports
-
-
-def _min_airport_distance(raw) -> float:
-    """Smallest driving distance across a spot's nearest airports, or +inf if none."""
-    if raw is None:
-        return float("inf")
-    try:
-        if not raw:
-            return float("inf")
-    except ValueError:
-        pass
-    distances = [a["distance_km"] for a in raw if "distance_km" in a]
-    return min(distances) if distances else float("inf")
+    """Convert a raw list-of-dicts (or None/NaN) into ``NearestAirport`` models."""
+    return [NearestAirport(**a) for a in as_airport_list(raw)]
 
 
 class SpotService:
@@ -66,7 +30,6 @@ class SpotService:
     def get_all_spots(self) -> List[SpotBase]:
         """Get all spots as SpotBase objects."""
         df = self.spot_repo.get_all_spots()
-        has_airports = "nearest_airports" in df.columns
         return [
             SpotBase(
                 spot_id=row["spot_id"],
@@ -74,18 +37,17 @@ class SpotService:
                 latitude=row["latitude"],
                 longitude=row["longitude"],
                 country=row["country"],
-                nearest_airports=_build_airports(row["nearest_airports"]) if has_airports else [],
             )
             for _, row in df.iterrows()
         ]
 
-    def get_spot(self, spot_id: str) -> Optional[SpotBase]:
-        """Get a single spot by ID."""
+    def get_spot(self, spot_id: str) -> Optional[SpotDetail]:
+        """Get a single spot by ID, including its nearest airports."""
         row = self.spot_repo.get_spot_by_id(spot_id)
         if row is None:
             return None
         airports = _build_airports(row["nearest_airports"]) if "nearest_airports" in row else []
-        return SpotBase(
+        return SpotDetail(
             spot_id=row["spot_id"],
             name=row["name"],
             latitude=row["latitude"],
@@ -93,6 +55,10 @@ class SpotService:
             country=row["country"],
             nearest_airports=airports,
         )
+
+    def get_meta(self) -> SpotsMeta:
+        """Dataset-level metadata, e.g. whether airport data is available."""
+        return SpotsMeta(has_airport_data=self.spot_repo.has_airport_data())
 
     def calculate_kiteable_percentage(
         self,
@@ -255,7 +221,7 @@ class SpotService:
 
         histogram_spot_ids = self.histogram_repo.get_1d_spot_ids()
         spot_ids, names, latitudes, longitudes, countries = self.spot_repo.get_arrays()
-        nearest_airports_arr = self.spot_repo.get_nearest_airports_array()
+        min_airport_dist = self.spot_repo.get_min_airport_distance_array()
         spot_id_to_idx = self.spot_repo.get_spot_id_to_idx()
 
         # Map histogram percentages to spot array order
@@ -273,12 +239,9 @@ class SpotService:
             mask &= self.spot_repo.get_country_mask(country)
         if name:
             mask &= self.spot_repo.get_name_mask(name)
-        if max_airport_distance_km is not None and nearest_airports_arr is not None:
-            airport_mask = np.array([
-                _min_airport_distance(a) <= max_airport_distance_km
-                for a in nearest_airports_arr
-            ])
-            mask &= airport_mask
+        if max_airport_distance_km is not None and min_airport_dist is not None:
+            # Spots without computed airports have inf and are excluded.
+            mask &= min_airport_dist <= max_airport_distance_km
 
         # Get passing indices, sort by percentage descending
         passing_idx = np.where(mask)[0]
@@ -297,11 +260,6 @@ class SpotService:
                 longitude=float(longitudes[i]),
                 country=str(countries[i]) if pd.notna(countries[i]) else None,
                 kiteable_percentage=round(float(pct_array[i]), 1),
-                nearest_airports=(
-                    _build_airports(nearest_airports_arr[i])
-                    if nearest_airports_arr is not None
-                    else []
-                ),
             )
             for i in result_idx
         ]

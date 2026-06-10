@@ -19,8 +19,8 @@ from data_pipelines.config import (
     AIRPORTS_REFERENCE_FILE,
     ENRICHED_SPOTS_FILE,
     INPUT_SPOTS_FILE,
-    OSRM_BASE_URL,
     OSRM_RATE_LIMIT_SECONDS,
+    OSRM_TABLE_URL,
     PROCESSED_DATA_DIR,
 )
 from data_pipelines.services.airport_service import AirportService
@@ -70,11 +70,11 @@ def enrich_spots(
     if skip_airports:
         df["nearest_airports"] = [[] for _ in range(len(df))]
     else:
-        print(f"\nComputing nearest airports via OSRM ({OSRM_BASE_URL})...")
+        print(f"\nComputing nearest airports via OSRM ({OSRM_TABLE_URL})...")
         service = AirportService(
             airports_csv=AIRPORTS_REFERENCE_FILE,
             cache_path=AIRPORT_ROUTES_CACHE_FILE,
-            osrm_base_url=OSRM_BASE_URL,
+            osrm_table_url=OSRM_TABLE_URL,
             rate_limit_seconds=OSRM_RATE_LIMIT_SECONDS,
             retry_failed=retry_failed,
         )

@@ -2,7 +2,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, Query, HTTPException
 
-from backend.schemas.spot import SpotBase, SpotWithStats
+from backend.schemas.spot import SpotBase, SpotDetail, SpotsMeta, SpotWithStats
 from backend.services.spot_service import SpotService
 from backend.api.dependencies import get_spot_service
 
@@ -19,7 +19,13 @@ async def get_filtered_spots(
     name: Optional[str] = Query(None, description="Filter by spot name"),
     min_percentage: float = Query(75, ge=0, le=100, description="Minimum kiteable percentage"),
     max_airport_distance_km: Optional[float] = Query(
-        None, ge=0, description="Keep only spots whose nearest airport is within this many km"
+        None,
+        ge=0,
+        description=(
+            "Keep only spots whose nearest airport is within this many km of driving. "
+            "Spots without computed airport data are excluded. "
+            "Ignored when the dataset has no airport data."
+        ),
     ),
     spot_service: SpotService = Depends(get_spot_service),
 ) -> List[SpotWithStats]:
@@ -57,12 +63,20 @@ async def get_countries(
     return spot_service.get_countries()
 
 
-@router.get("/{spot_id}", response_model=SpotBase)
+@router.get("/meta", response_model=SpotsMeta)
+async def get_meta(
+    spot_service: SpotService = Depends(get_spot_service),
+) -> SpotsMeta:
+    """Dataset-level metadata (e.g. whether airport data is available)."""
+    return spot_service.get_meta()
+
+
+@router.get("/{spot_id}", response_model=SpotDetail)
 async def get_spot(
     spot_id: str,
     spot_service: SpotService = Depends(get_spot_service),
-) -> SpotBase:
-    """Get a single spot by ID."""
+) -> SpotDetail:
+    """Get a single spot by ID, including its nearest airports."""
     spot = spot_service.get_spot(spot_id)
     if spot is None:
         raise HTTPException(status_code=404, detail="Spot not found")

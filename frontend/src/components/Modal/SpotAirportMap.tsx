@@ -7,11 +7,13 @@ import {
   useMap,
 } from 'react-leaflet';
 import { LatLngBounds } from 'leaflet';
-import type { SpotWithStats } from '../../api/types';
+import type { NearestAirport, Spot } from '../../api/types';
+import { formatDuration } from '../../utils/formatDuration';
 import 'leaflet/dist/leaflet.css';
 
 interface Props {
-  spot: SpotWithStats;
+  spot: Spot;
+  airports: NearestAirport[];
 }
 
 function FitToPoints({ points }: { points: [number, number][] }) {
@@ -28,13 +30,10 @@ function FitToPoints({ points }: { points: [number, number][] }) {
   return null;
 }
 
-export function SpotAirportMap({ spot }: Props) {
+export function SpotAirportMap({ spot, airports }: Props) {
   const airportsWithCoords = useMemo(
-    () =>
-      spot.nearest_airports.filter(
-        (a) => a.latitude !== null && a.longitude !== null,
-      ),
-    [spot.nearest_airports],
+    () => airports.filter((a) => a.latitude !== null && a.longitude !== null),
+    [airports],
   );
 
   const points: [number, number][] = useMemo(
@@ -92,7 +91,7 @@ export function SpotAirportMap({ spot }: Props) {
               <div className="text-xs">
                 <span className="font-semibold">{a.iata}</span> — {a.name}
                 <div className="text-gray-500">
-                  {a.distance_km.toFixed(0)} km · {Math.round(a.duration_minutes)} min
+                  {a.distance_km.toFixed(0)} km · {formatDuration(a.duration_minutes)}
                 </div>
               </div>
             </Tooltip>
