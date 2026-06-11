@@ -1,14 +1,11 @@
-# Kiteapp robots.txt
+# WhereToKite robots.txt
 # Allow all search engines to crawl the site
 
 User-agent: *
 Allow: /
 
+# API endpoints are not useful for indexing
+Disallow: /api/
+
 # Sitemap location
 Sitemap: https://wheretokite.com/sitemap.xml
-
-# Crawl-delay for politeness (optional)
-Crawl-delay: 1
-
-# Disallow API endpoints (handled by backend, not needed for indexing)
-Disallow: /api/

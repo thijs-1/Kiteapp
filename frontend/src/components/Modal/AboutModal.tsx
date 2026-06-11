@@ -40,9 +40,17 @@ export function AboutModal() {
         </svg>
       </button>
 
-      {/* Modal overlay */}
-      {isOpen && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[1002] p-0 sm:p-4">
+      {/* Modal overlay - stays mounted when closed so the About text remains
+          in the DOM and is crawlable by search engines */}
+      <div
+        className={`fixed inset-0 bg-black/50 items-center justify-center z-[1002] p-0 sm:p-4 ${
+          isOpen ? 'flex' : 'hidden'
+        }`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="About WhereToKite"
+        aria-hidden={!isOpen}
+      >
           <div
             className={`bg-white flex flex-col shadow-2xl ${
               isMobile
@@ -53,7 +61,7 @@ export function AboutModal() {
             {/* Header */}
             <div className="flex justify-between items-center p-3 sm:p-4 border-b">
               <h2 className="text-lg sm:text-xl font-bold text-gray-800">
-                About
+                About WhereToKite
               </h2>
               <button
                 onClick={() => setIsOpen(false)}
@@ -78,13 +86,12 @@ export function AboutModal() {
 
             {/* Content */}
             <div className="flex-1 p-4 sm:p-6 overflow-y-auto">
-              <div className="prose prose-sm sm:prose max-w-none prose-headings:text-gray-800 prose-p:text-gray-600 prose-a:text-kite prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-700 prose-li:text-gray-600">
+              <section className="prose prose-sm sm:prose max-w-none prose-headings:text-gray-800 prose-p:text-gray-600 prose-a:text-kite prose-a:no-underline hover:prose-a:underline prose-strong:text-gray-700 prose-li:text-gray-600">
                 <ReactMarkdown>{aboutContent}</ReactMarkdown>
-              </div>
+              </section>
             </div>
           </div>
-        </div>
-      )}
+      </div>
     </>
   );
 }
