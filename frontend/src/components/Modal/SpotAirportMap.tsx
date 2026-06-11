@@ -47,7 +47,7 @@ export function SpotAirportMap({ spot, airports }: Props) {
   );
 
   return (
-    <div className="relative h-36 sm:h-44 w-full rounded-lg overflow-hidden border border-gray-200">
+    <div className="relative h-full w-full rounded-lg overflow-hidden border border-gray-200">
       <MapContainer
         center={[spot.latitude, spot.longitude]}
         zoom={9}
