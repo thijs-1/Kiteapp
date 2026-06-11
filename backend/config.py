@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     # fetched from Esri and disk-cached with LRU eviction
     map_image_cache_dir: Path = data_dir / "cache" / "map_images"
     map_image_cache_max_entries: int = 500
+    map_image_refresh_after_days: float = 30.0
     map_image_half_box_m: float = 500.0
     map_image_size_px: int = 1024
 

@@ -82,8 +82,9 @@ def get_spot_map_image(
 ) -> Response:
     """Satellite image of the box around a spot, disk-cached with LRU eviction.
 
-    Cache hits are served immediately and re-fetched from Esri in the
-    background (after the response) so the cache tracks recent imagery.
+    Cache hits are served immediately; if the cached image is older than the
+    refresh TTL it is re-fetched from Esri in the background (after the
+    response) so the cache tracks recent imagery.
     Sync handler on purpose: FastAPI runs it in a threadpool, so the blocking
     Esri fetch on a cache miss doesn't stall the event loop.
     """
@@ -93,9 +94,10 @@ def get_spot_map_image(
 
     image = map_image_service.get_cached_image(spot_id)
     if image is not None:
-        background_tasks.add_task(
-            map_image_service.refresh_image, spot_id, spot.latitude, spot.longitude
-        )
+        if map_image_service.is_stale(spot_id):
+            background_tasks.add_task(
+                map_image_service.refresh_image, spot_id, spot.latitude, spot.longitude
+            )
     else:
         image = map_image_service.refresh_image(spot_id, spot.latitude, spot.longitude)
         if image is None:

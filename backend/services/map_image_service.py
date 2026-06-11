@@ -3,6 +3,7 @@ import math
 import os
 import re
 import threading
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -22,19 +23,29 @@ class MapImageService:
     API and caches them on disk, keeping only the most recently used ones.
 
     Cache hits are served as-is; callers are expected to invoke
-    ``refresh_image`` in the background afterwards so the cached image
-    converges to Esri's most recent imagery without slowing the response.
+    ``refresh_image`` in the background when ``is_stale`` says the cached
+    image is old, so the cache tracks Esri's recent imagery without
+    slowing the response.
+
+    File timestamps carry double duty: mtime records when the image was
+    fetched from Esri (drives staleness), atime records when it was last
+    served (drives LRU eviction, set explicitly so mount options like
+    noatime don't matter).
     """
 
     def __init__(
         self,
         cache_dir: Path = None,
         max_entries: int = None,
+        refresh_after_days: float = None,
         half_box_m: float = None,
         size_px: int = None,
     ):
         self.cache_dir = Path(cache_dir or settings.map_image_cache_dir)
         self.max_entries = max_entries or settings.map_image_cache_max_entries
+        self.refresh_after_s = (
+            refresh_after_days or settings.map_image_refresh_after_days
+        ) * 86400
         self.half_box_m = half_box_m or settings.map_image_half_box_m
         self.size_px = size_px or settings.map_image_size_px
         self._lock = threading.Lock()
@@ -50,9 +61,17 @@ class MapImageService:
             return None
         if not image:
             return None
-        # Refresh mtime so eviction drops least recently *used*, not written
-        os.utime(path)
+        # Mark as recently used (atime) without touching the fetched-at mtime
+        os.utime(path, (time.time(), path.stat().st_mtime))
         return image
+
+    def is_stale(self, spot_id: str) -> bool:
+        """Whether the cached image is missing or fetched longer ago than the TTL."""
+        try:
+            fetched_at = self._cache_path(spot_id).stat().st_mtime
+        except OSError:
+            return True
+        return time.time() - fetched_at > self.refresh_after_s
 
     def refresh_image(self, spot_id: str, latitude: float, longitude: float) -> Optional[bytes]:
         """Fetch the latest image from Esri and store it. None on failure."""
@@ -110,10 +129,10 @@ class MapImageService:
             self._evict()
 
     def _evict(self) -> None:
-        """Delete the least recently used images beyond max_entries."""
+        """Delete the least recently used (atime) images beyond max_entries."""
         files = sorted(
             self.cache_dir.glob("*.jpg"),
-            key=lambda p: p.stat().st_mtime,
+            key=lambda p: p.stat().st_atime,
             reverse=True,
         )
         for stale in files[self.max_entries:]:

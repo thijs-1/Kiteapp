@@ -15,13 +15,21 @@ from backend.services.map_image_service import MapImageService
 JPEG = b"\xff\xd8fake-jpeg-bytes"
 
 
-def make_service(tmp_path, max_entries=3):
+def make_service(tmp_path, max_entries=3, refresh_after_days=30.0):
     return MapImageService(
         cache_dir=tmp_path / "map_images",
         max_entries=max_entries,
+        refresh_after_days=refresh_after_days,
         half_box_m=500.0,
         size_px=1024,
     )
+
+
+def age_cached_image(service, spot_id, days):
+    """Backdate a cached image's fetched-at mtime by the given number of days."""
+    path = service._cache_path(spot_id)
+    fetched_at = path.stat().st_mtime - days * 86400
+    os.utime(path, (fetched_at, fetched_at))
 
 
 class TestMapImageService:
@@ -33,6 +41,22 @@ class TestMapImageService:
         assert service.refresh_image("s1", 38.0, -0.5) == JPEG
         assert service.get_cached_image("s1") == JPEG
         assert service._fetch.call_count == 1
+
+    def test_is_stale_tracks_fetch_age_not_reads(self, tmp_path, monkeypatch):
+        service = make_service(tmp_path, refresh_after_days=30.0)
+        monkeypatch.setattr(service, "_fetch", MagicMock(return_value=JPEG))
+
+        assert service.is_stale("s1")  # not cached yet
+        service.refresh_image("s1", 38.0, -0.5)
+        assert not service.is_stale("s1")
+
+        age_cached_image(service, "s1", days=31)
+        # Serving the image marks it as used but must not reset its age
+        assert service.get_cached_image("s1") == JPEG
+        assert service.is_stale("s1")
+        # A refresh resets the age
+        service.refresh_image("s1", 38.0, -0.5)
+        assert not service.is_stale("s1")
 
     def test_fetch_failure_returns_none_and_keeps_old_image(self, tmp_path, monkeypatch):
         service = make_service(tmp_path)
@@ -106,12 +130,13 @@ class TestMapImageRoute:
         assert "max-age" in response.headers["cache-control"]
         assert response.content == JPEG
 
-    def test_cache_hit_serves_cached_and_refreshes_in_background(
+    def test_stale_cache_hit_serves_cached_and_refreshes_in_background(
         self, tmp_path, monkeypatch
     ):
-        service = make_service(tmp_path)
+        service = make_service(tmp_path, refresh_after_days=30.0)
         monkeypatch.setattr(service, "_fetch", MagicMock(return_value=JPEG))
         service.refresh_image("s1", SPOT.latitude, SPOT.longitude)
+        age_cached_image(service, "s1", days=31)
 
         newer = b"\xff\xd8newer-imagery"
         monkeypatch.setattr(service, "_fetch", MagicMock(return_value=newer))
@@ -124,6 +149,21 @@ class TestMapImageRoute:
         assert response.content == JPEG
         assert service._fetch.call_count == 1
         assert service.get_cached_image("s1") == newer
+
+    def test_fresh_cache_hit_does_not_refetch(self, tmp_path, monkeypatch):
+        service = make_service(tmp_path, refresh_after_days=30.0)
+        monkeypatch.setattr(service, "_fetch", MagicMock(return_value=JPEG))
+        service.refresh_image("s1", SPOT.latitude, SPOT.longitude)
+
+        fetch = MagicMock(return_value=b"\xff\xd8newer-imagery")
+        monkeypatch.setattr(service, "_fetch", fetch)
+        app = make_app(service, spot=SPOT)
+
+        response = TestClient(app).get("/spots/s1/map-image")
+        assert response.status_code == 200
+        assert response.content == JPEG
+        assert fetch.call_count == 0
+        assert service.get_cached_image("s1") == JPEG
 
     def test_cache_miss_with_fetch_failure_502(self, tmp_path, monkeypatch):
         service = make_service(tmp_path)
