@@ -11,13 +11,10 @@ import {
   ChartOptions,
 } from 'chart.js';
 import { Radar } from 'react-chartjs-2';
-import { MapContainer, TileLayer, CircleMarker, useMap } from 'react-leaflet';
-import { LatLngBounds } from 'leaflet';
 import { useWindRoseData } from '../../../hooks/useHistogram';
 import { useSpotStore } from '../../../store/spotStore';
 import { WIND_COLORS } from '../../../utils/windColors';
 import { useIsMobile } from '../../../hooks/useIsMobile';
-import 'leaflet/dist/leaflet.css';
 
 ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend, SubTitle);
 
@@ -33,6 +30,9 @@ const DIRECTION_LABELS = [
 // Half-width of the map box around the spot, in meters
 const MAP_HALF_BOX_M = 500;
 const METERS_PER_DEGREE_LAT = 111320;
+// Fixed export resolution so the image URL (and browser cache entry) is
+// stable across container resizes; ~1 m/px for the ±500m box
+const MAP_IMAGE_PX = 1024;
 
 const hexToRgba = (hex: string, alpha: number): string => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -40,16 +40,6 @@ const hexToRgba = (hex: string, alpha: number): string => {
   const b = parseInt(hex.slice(5, 7), 16);
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 };
-
-// Keeps the map fitted to the ±500m box when the square container resizes
-function FitToBox({ bounds, side }: { bounds: LatLngBounds; side: number }) {
-  const map = useMap();
-  useEffect(() => {
-    map.invalidateSize();
-    map.fitBounds(bounds, { animate: false });
-  }, [map, bounds, side]);
-  return null;
-}
 
 interface Props {
   spotId: string;
@@ -76,18 +66,29 @@ export function WindRose({ spotId }: Props) {
 
   const spot = selectedSpot && selectedSpot.spot_id === spotId ? selectedSpot : null;
 
-  const mapBounds = useMemo(() => {
+  // Single static satellite image of the ±500m box instead of an interactive
+  // map: one cacheable request, no tile churn. The spot sits at the center.
+  const mapImageUrl = useMemo(() => {
     if (!spot) return null;
     const latDelta = MAP_HALF_BOX_M / METERS_PER_DEGREE_LAT;
     const lngDelta =
       MAP_HALF_BOX_M / (METERS_PER_DEGREE_LAT * Math.cos((spot.latitude * Math.PI) / 180));
-    return new LatLngBounds(
-      [spot.latitude - latDelta, spot.longitude - lngDelta],
-      [spot.latitude + latDelta, spot.longitude + lngDelta],
+    const bbox = [
+      spot.longitude - lngDelta,
+      spot.latitude - latDelta,
+      spot.longitude + lngDelta,
+      spot.latitude + latDelta,
+    ].join(',');
+    return (
+      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export' +
+      `?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=${MAP_IMAGE_PX},${MAP_IMAGE_PX}` +
+      '&format=jpg&f=image'
     );
   }, [spot]);
 
-  if (isLoading) {
+  // Only show the spinner on first load; during refetches the stale rose (and
+  // the map, which doesn't depend on histogram data) stays mounted
+  if (isLoading && !data) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-2">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-kite" />
@@ -106,7 +107,7 @@ export function WindRose({ spotId }: Props) {
 
   const numStrengthBins = data.data.length;
   const numDirections = data.direction_bins.length - 1;
-  const mapMode = showMap && spot !== null && mapBounds !== null;
+  const mapMode = showMap && spot !== null && mapImageUrl !== null;
 
   // Create bin labels for legend
   const getBinLabel = (binIdx: number): string => {
@@ -271,47 +272,35 @@ export function WindRose({ spotId }: Props) {
         <div className="absolute inset-0 flex items-center justify-center">
           {side > 0 && (
             <div
-              className="relative rounded-lg overflow-hidden border border-gray-200"
+              className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-300"
               style={{ width: side, height: side }}
             >
-              <MapContainer
-                bounds={mapBounds}
-                zoomSnap={0}
-                maxZoom={19}
-                dragging={false}
-                scrollWheelZoom={false}
-                doubleClickZoom={false}
-                touchZoom={false}
-                boxZoom={false}
-                keyboard={false}
-                zoomControl={false}
-                className="h-full w-full"
-              >
-                <TileLayer
-                  attribution="Imagery &copy; Esri"
-                  url="https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"
-                  maxZoom={19}
-                />
-                <CircleMarker
-                  center={[spot.latitude, spot.longitude]}
-                  radius={4}
-                  pathOptions={{
-                    color: '#EA580C',
-                    fillColor: '#F97316',
-                    fillOpacity: 0.9,
-                    weight: 2,
-                  }}
-                />
-                <FitToBox bounds={mapBounds} side={side} />
-              </MapContainer>
+              <img
+                src={mapImageUrl}
+                alt={`Satellite view of ${spot.name}`}
+                className="absolute inset-0 h-full w-full object-cover"
+                draggable={false}
+                onError={(e) => (e.currentTarget.style.visibility = 'hidden')}
+                onLoad={(e) => (e.currentTarget.style.visibility = 'visible')}
+              />
+
+              {/* Spot marker: the spot is the center of the bbox by construction */}
+              <div
+                className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-2.5 h-2.5 rounded-full pointer-events-none"
+                style={{ backgroundColor: '#F97316', border: '2px solid #EA580C' }}
+              />
 
               {/* Wind rose superimposed, its center on the spot */}
-              <div className="absolute inset-0 z-[500]">
+              <div className="absolute inset-0">
                 <Radar data={chartData} options={options} />
               </div>
 
-              <div className="absolute top-1 left-1 z-[600] bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
+              <div className="absolute top-1 left-1 bg-black/50 text-white text-[10px] px-1.5 py-0.5 rounded pointer-events-none">
                 box ±500 m · wind blows toward
+              </div>
+
+              <div className="absolute bottom-0 right-0 bg-white/70 text-gray-700 text-[9px] px-1 rounded-tl pointer-events-none">
+                Imagery &copy; Esri
               </div>
             </div>
           )}
