@@ -9,6 +9,9 @@ function App() {
 
   return (
     <div className="relative">
+      <h1 className="sr-only">
+        WhereToKite - Find the Best Kitesurfing Spots Worldwide
+      </h1>
       <Map />
       <HamburgerMenu />
       <SpotModal />

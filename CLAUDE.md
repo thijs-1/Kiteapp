@@ -28,6 +28,7 @@ npm run lint                   # ESLint
 ### Data Pipeline
 ```bash
 .\venv\Scripts\python -m scripts.build_airports_csv            # Rebuild data/airports.csv from OurAirports
+.\venv\Scripts\python -m scripts.generate_sitemap              # Regenerate frontend/public/sitemap.xml from spots.pkl
 .\venv\Scripts\python -m data_pipelines.enrich_spots           # One-time: add country + nearest-airport info to spots
 .\venv\Scripts\python -m data_pipelines.main --max-cells 1     # Test with 1 grid cell
 .\venv\Scripts\python -m data_pipelines.main --cleanup         # Full run, delete raw files after
