@@ -88,6 +88,11 @@ export function useWindRoseData(spotId: string | null) {
       return;
     }
 
+    // Keep showing the previous result while refetching (e.g. on date filter
+    // changes) so consumers like the wind rose map stay mounted — but never
+    // show another spot's data
+    setData((prev) => (prev && prev.spot_id !== spotId ? null : prev));
+
     const fetchData = async () => {
       setIsLoading(true);
       setError(null);
