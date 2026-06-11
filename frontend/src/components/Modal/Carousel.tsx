@@ -1,30 +1,27 @@
 import { useState, useRef, useCallback, useEffect, useMemo, memo } from 'react';
+import type { NearestAirport, Spot } from '../../api/types';
 import { KiteableLineChart } from './Charts/KiteableLineChart';
 import { WindHistogram } from './Charts/WindHistogram';
 import { WindRose } from './Charts/WindRose';
 import { DailyWindChart } from './Charts/DailyWindChart';
+import { AirportsCard } from './AirportsCard';
 
 // Memoized chart components to prevent re-renders when only activeIndex changes
 const MemoKiteableLineChart = memo(KiteableLineChart);
 const MemoWindHistogram = memo(WindHistogram);
 const MemoWindRose = memo(WindRose);
 const MemoDailyWindChart = memo(DailyWindChart);
+const MemoAirportsCard = memo(AirportsCard);
 
 interface CarouselProps {
-  spotId: string;
+  spot: Spot;
+  airports: NearestAirport[];
 }
-
-const CHART_TITLES = [
-  'Kiteable Wind %',
-  'Wind Strength Distribution',
-  'Wind Rose',
-  'Daily Wind Profiles',
-];
 
 // Minimum swipe distance to trigger navigation (in pixels)
 const SWIPE_THRESHOLD = 50;
 
-export function Carousel({ spotId }: CarouselProps) {
+export function Carousel({ spot, airports }: CarouselProps) {
   // Start with line chart (index 0)
   const [activeIndex, setActiveIndex] = useState(0);
   // Track which charts have been visited to enable lazy mounting
@@ -35,6 +32,26 @@ export function Carousel({ spotId }: CarouselProps) {
   // Track which button is pressed for mobile-friendly feedback
   const [pressedButton, setPressedButton] = useState<'prev' | 'next' | null>(null);
   const pressTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Memoize slides so invisible ones don't re-render on navigation
+  const slides = useMemo(() => {
+    const items = [
+      { title: 'Kiteable Wind %', element: <MemoKiteableLineChart spotId={spot.spot_id} /> },
+      { title: 'Wind Strength Distribution', element: <MemoWindHistogram spotId={spot.spot_id} /> },
+      { title: 'Wind Rose', element: <MemoWindRose spotId={spot.spot_id} /> },
+      { title: 'Daily Wind Profiles', element: <MemoDailyWindChart spotId={spot.spot_id} /> },
+    ];
+    if (airports.length > 0) {
+      items.push({
+        title: 'Nearest Airports',
+        element: <MemoAirportsCard spot={spot} airports={airports} />,
+      });
+    }
+    return items;
+  }, [spot, airports]);
+
+  // Airports load async, so the slide count can shrink between renders
+  const safeIndex = Math.min(activeIndex, slides.length - 1);
 
   // Clear pressed state after animation completes
   useEffect(() => {
@@ -69,13 +86,13 @@ export function Carousel({ spotId }: CarouselProps) {
 
   const goToPrev = useCallback(() => {
     handleButtonPress('prev');
-    navigateTo((activeIndex - 1 + CHART_TITLES.length) % CHART_TITLES.length);
-  }, [handleButtonPress, navigateTo, activeIndex]);
+    navigateTo((safeIndex - 1 + slides.length) % slides.length);
+  }, [handleButtonPress, navigateTo, safeIndex, slides.length]);
 
   const goToNext = useCallback(() => {
     handleButtonPress('next');
-    navigateTo((activeIndex + 1) % CHART_TITLES.length);
-  }, [handleButtonPress, navigateTo, activeIndex]);
+    navigateTo((safeIndex + 1) % slides.length);
+  }, [handleButtonPress, navigateTo, safeIndex, slides.length]);
 
   // Keyboard navigation (Left/Right arrow keys)
   // Skip when focus is on interactive elements like sliders or inputs
@@ -126,14 +143,6 @@ export function Carousel({ spotId }: CarouselProps) {
     touchStartY.current = null;
   }, []);
 
-  // Memoize chart elements so invisible charts don't re-render on navigation
-  const charts = useMemo(() => [
-    <MemoKiteableLineChart key={0} spotId={spotId} />,
-    <MemoWindHistogram key={1} spotId={spotId} />,
-    <MemoWindRose key={2} spotId={spotId} />,
-    <MemoDailyWindChart key={3} spotId={spotId} />,
-  ], [spotId]);
-
   return (
     <div
       className="h-full flex flex-col"
@@ -144,17 +153,17 @@ export function Carousel({ spotId }: CarouselProps) {
       {/* Chart title with page indicator */}
       <div className="flex items-center justify-center gap-2 mb-2">
         <h3 className="text-lg font-semibold text-gray-700">
-          {CHART_TITLES[activeIndex]}
+          {slides[safeIndex].title}
         </h3>
-        <span className="text-sm text-gray-400">{activeIndex + 1}/{CHART_TITLES.length}</span>
+        <span className="text-sm text-gray-400">{safeIndex + 1}/{slides.length}</span>
       </div>
 
       {/* Chart container with navigation */}
       <div className="flex-1 flex items-center gap-2 sm:gap-4 min-h-0">
-        {/* Previous button - larger touch target */}
+        {/* Previous button - hidden on mobile where swipe and dots handle navigation */}
         <button
           onClick={goToPrev}
-          className={`p-3 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 touch-manipulation ${
+          className={`hidden sm:block p-3 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 touch-manipulation ${
             pressedButton === 'prev' ? 'bg-gray-200' : ''
           }`}
           aria-label="Previous chart"
@@ -176,24 +185,24 @@ export function Carousel({ spotId }: CarouselProps) {
 
         {/* Chart — only mount charts that have been visited, show only active one */}
         <div className="flex-1 h-full min-w-0 relative">
-          {charts.map((chart, index) => (
+          {slides.map((slide, index) => (
             <div
               key={index}
               className={`absolute inset-0 transition-[opacity,visibility] duration-200 ${
-                index === activeIndex
+                index === safeIndex
                   ? 'opacity-100 visible'
                   : 'opacity-0 invisible pointer-events-none'
               }`}
             >
-              {mountedCharts.has(index) ? chart : null}
+              {mountedCharts.has(index) ? slide.element : null}
             </div>
           ))}
         </div>
 
-        {/* Next button - larger touch target */}
+        {/* Next button - hidden on mobile where swipe and dots handle navigation */}
         <button
           onClick={goToNext}
-          className={`p-3 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 touch-manipulation ${
+          className={`hidden sm:block p-3 hover:bg-gray-100 rounded-full transition-colors flex-shrink-0 touch-manipulation ${
             pressedButton === 'next' ? 'bg-gray-200' : ''
           }`}
           aria-label="Next chart"
@@ -216,16 +225,16 @@ export function Carousel({ spotId }: CarouselProps) {
 
       {/* Dot indicators - 44px touch targets with visual dot inside */}
       <div className="flex justify-center gap-1 pt-2 sm:pt-4">
-        {CHART_TITLES.map((_, index) => (
+        {slides.map((slide, index) => (
           <button
             key={index}
             onClick={() => navigateTo(index)}
             className="w-11 h-11 flex items-center justify-center touch-manipulation"
-            aria-label={`Go to ${CHART_TITLES[index]}`}
+            aria-label={`Go to ${slide.title}`}
           >
             <span
               className={`w-3 h-3 rounded-full transition-colors ${
-                index === activeIndex ? 'bg-kite' : 'bg-gray-300'
+                index === safeIndex ? 'bg-kite' : 'bg-gray-300'
               }`}
             />
           </button>
