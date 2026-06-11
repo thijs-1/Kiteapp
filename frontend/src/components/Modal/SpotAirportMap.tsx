@@ -3,13 +3,34 @@ import {
   MapContainer,
   TileLayer,
   CircleMarker,
+  Marker,
   Tooltip,
   useMap,
 } from 'react-leaflet';
-import { LatLngBounds } from 'leaflet';
+import { LatLngBounds, divIcon } from 'leaflet';
 import type { NearestAirport, Spot } from '../../api/types';
 import { formatDuration } from '../../utils/formatDuration';
 import 'leaflet/dist/leaflet.css';
+
+const PLANE_SVG =
+  '<svg viewBox="0 0 24 24" fill="white" width="15" height="15" aria-hidden="true">' +
+  '<path d="M21 16v-2l-8-5V3.5a1.5 1.5 0 0 0-3 0V9l-8 5v2l8-2.5V19l-2 1.5V22l3.5-1 3.5 1v-1.5L13 19v-5.5l8 2.5z"/>' +
+  '</svg>';
+
+// Badge anchored at its center on the airport position, IATA label below
+function airportIcon(iata: string) {
+  return divIcon({
+    className: '',
+    iconSize: [0, 0],
+    html:
+      '<div class="relative">' +
+      '<div class="absolute -translate-x-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-cyan-600 border-2 border-white shadow-md flex items-center justify-center">' +
+      PLANE_SVG +
+      '</div>' +
+      `<div class="absolute left-0 top-[15px] -translate-x-1/2 px-1 rounded bg-white/90 text-[10px] font-bold text-cyan-700 shadow leading-tight">${iata}</div>` +
+      '</div>',
+  });
+}
 
 interface Props {
   spot: Spot;
@@ -76,18 +97,12 @@ export function SpotAirportMap({ spot, airports }: Props) {
         </CircleMarker>
 
         {airportsWithCoords.map((a) => (
-          <CircleMarker
+          <Marker
             key={a.iata}
-            center={[a.latitude as number, a.longitude as number]}
-            radius={6}
-            pathOptions={{
-              color: '#0E7490',
-              fillColor: '#0891B2',
-              fillOpacity: 0.9,
-              weight: 2,
-            }}
+            position={[a.latitude as number, a.longitude as number]}
+            icon={airportIcon(a.iata)}
           >
-            <Tooltip direction="top" offset={[0, -6]}>
+            <Tooltip direction="top" offset={[0, -16]}>
               <div className="text-xs">
                 <span className="font-semibold">{a.iata}</span> — {a.name}
                 <div className="text-gray-500">
@@ -95,7 +110,7 @@ export function SpotAirportMap({ spot, airports }: Props) {
                 </div>
               </div>
             </Tooltip>
-          </CircleMarker>
+          </Marker>
         ))}
 
         <FitToPoints points={points} />
