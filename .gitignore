@@ -18,6 +18,7 @@ data/raw/
 data/processed/histograms_1d/
 data/processed/histograms_2d/
 data/processed/airport_routes_cache.json
+data/cache/
 *.nc
 *.pkl
 *.npz

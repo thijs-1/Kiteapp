@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Chart as ChartJS,
   RadialLinearScale,
@@ -26,13 +26,6 @@ const DIRECTION_LABELS = [
   'S',  '', '', '', '', '', '', '', '',
   'W',  '', '', '', '', '', '', '', '',
 ];
-
-// Half-width of the map box around the spot, in meters
-const MAP_HALF_BOX_M = 500;
-const METERS_PER_DEGREE_LAT = 111320;
-// Fixed export resolution so the image URL (and browser cache entry) is
-// stable across container resizes; ~1 m/px for the ±500m box
-const MAP_IMAGE_PX = 1024;
 
 const hexToRgba = (hex: string, alpha: number): string => {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -66,25 +59,9 @@ export function WindRose({ spotId }: Props) {
 
   const spot = selectedSpot && selectedSpot.spot_id === spotId ? selectedSpot : null;
 
-  // Single static satellite image of the ±500m box instead of an interactive
-  // map: one cacheable request, no tile churn. The spot sits at the center.
-  const mapImageUrl = useMemo(() => {
-    if (!spot) return null;
-    const latDelta = MAP_HALF_BOX_M / METERS_PER_DEGREE_LAT;
-    const lngDelta =
-      MAP_HALF_BOX_M / (METERS_PER_DEGREE_LAT * Math.cos((spot.latitude * Math.PI) / 180));
-    const bbox = [
-      spot.longitude - lngDelta,
-      spot.latitude - latDelta,
-      spot.longitude + lngDelta,
-      spot.latitude + latDelta,
-    ].join(',');
-    return (
-      'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/export' +
-      `?bbox=${bbox}&bboxSR=4326&imageSR=3857&size=${MAP_IMAGE_PX},${MAP_IMAGE_PX}` +
-      '&format=jpg&f=image'
-    );
-  }, [spot]);
+  // Single static satellite image of the ±500m box around the spot, served
+  // and disk-cached by the backend: one cacheable request, no tile churn
+  const mapImageUrl = `/api/spots/${spotId}/map-image`;
 
   // Only show the spinner on first load; during refetches the stale rose (and
   // the map, which doesn't depend on histogram data) stays mounted
@@ -107,7 +84,7 @@ export function WindRose({ spotId }: Props) {
 
   const numStrengthBins = data.data.length;
   const numDirections = data.direction_bins.length - 1;
-  const mapMode = showMap && spot !== null && mapImageUrl !== null;
+  const mapMode = showMap && spot !== null;
 
   // Create bin labels for legend
   const getBinLabel = (binIdx: number): string => {

@@ -15,6 +15,14 @@ class Settings(BaseSettings):
     histograms_2d_dir: Path = processed_dir / "histograms_2d"
     timeseries_dir: Path = data_dir / "timeseries"
 
+    # Spot map images (satellite snapshot behind the wind rose),
+    # fetched from Esri and disk-cached with LRU eviction
+    map_image_cache_dir: Path = data_dir / "cache" / "map_images"
+    map_image_cache_max_entries: int = 500
+    map_image_refresh_after_days: float = 30.0
+    map_image_half_box_m: float = 500.0
+    map_image_size_px: int = 1024
+
     # API settings
     api_title: str = "Kiteapp API"
     api_version: str = "1.0.0"

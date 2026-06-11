@@ -8,6 +8,7 @@ from backend.services.spot_service import SpotService
 from backend.services.histogram_service import HistogramService
 from backend.services.windrose_service import WindRoseService
 from backend.services.daily_wind_service import DailyWindService
+from backend.services.map_image_service import MapImageService
 
 
 @lru_cache()
@@ -43,6 +44,12 @@ def get_windrose_service() -> WindRoseService:
     return WindRoseService(
         histogram_repo=get_histogram_repository(),
     )
+
+
+@lru_cache()
+def get_map_image_service() -> MapImageService:
+    """Get cached map image service instance."""
+    return MapImageService()
 
 
 @lru_cache()
