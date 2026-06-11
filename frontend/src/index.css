@@ -2,12 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Leaflet container full screen */
-.leaflet-container {
-  height: 100vh;
-  width: 100vw;
-}
-
 /* Custom scrollbar for filter panel */
 .overflow-y-auto::-webkit-scrollbar {
   width: 6px;
