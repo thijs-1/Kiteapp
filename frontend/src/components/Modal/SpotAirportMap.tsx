@@ -37,17 +37,31 @@ interface Props {
   airports: NearestAirport[];
 }
 
-function FitToPoints({ points }: { points: [number, number][] }) {
+// Center on the spot and zoom out just enough to show every airport.
+// Mirroring each airport across the spot makes the bounds symmetric, so
+// fitBounds keeps the spot in the middle instead of the markers' midpoint.
+function FitToSpot({
+  lat,
+  lng,
+  points,
+}: {
+  lat: number;
+  lng: number;
+  points: [number, number][];
+}) {
   const map = useMap();
   useEffect(() => {
-    if (points.length === 0) return;
-    if (points.length === 1) {
-      map.setView(points[0], 9);
+    if (points.length === 0) {
+      map.setView([lat, lng], 9);
       return;
     }
-    const bounds = new LatLngBounds(points);
+    const mirrored = points.flatMap((p) => [
+      p,
+      [2 * lat - p[0], 2 * lng - p[1]] as [number, number],
+    ]);
+    const bounds = new LatLngBounds([[lat, lng], ...mirrored]);
     map.fitBounds(bounds, { padding: [24, 24] });
-  }, [map, points]);
+  }, [map, lat, lng, points]);
   return null;
 }
 
@@ -57,14 +71,12 @@ export function SpotAirportMap({ spot, airports }: Props) {
     [airports],
   );
 
-  const points: [number, number][] = useMemo(
-    () => [
-      [spot.latitude, spot.longitude],
-      ...airportsWithCoords.map(
+  const airportPoints: [number, number][] = useMemo(
+    () =>
+      airportsWithCoords.map(
         (a) => [a.latitude as number, a.longitude as number] as [number, number],
       ),
-    ],
-    [spot.latitude, spot.longitude, airportsWithCoords],
+    [airportsWithCoords],
   );
 
   return (
@@ -113,7 +125,7 @@ export function SpotAirportMap({ spot, airports }: Props) {
           </Marker>
         ))}
 
-        <FitToPoints points={points} />
+        <FitToSpot lat={spot.latitude} lng={spot.longitude} points={airportPoints} />
       </MapContainer>
     </div>
   );
