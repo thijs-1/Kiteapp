@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     spots_file: Path = processed_dir / "spots.pkl"
     histograms_1d_file: Path = processed_dir / "histograms_1d.pkl"  # Single 3D array
     histograms_2d_dir: Path = processed_dir / "histograms_2d"
+    histograms_temperature_file: Path = processed_dir / "histograms_temperature.pkl"
+    histograms_precipitation_file: Path = processed_dir / "histograms_precipitation.pkl"
     timeseries_dir: Path = data_dir / "timeseries"
 
     # Spot map images (satellite snapshot behind the wind rose),

@@ -8,6 +8,7 @@ from data_pipelines.config import (
     RAW_DATA_DIR,
     ERA5_YEARS,
     ERA5_DATASET,
+    ERA5_VARIABLES,
 )
 from data_pipelines.models.grid import BoundingBox
 
@@ -61,13 +62,10 @@ class CDSService:
 
         print(f"  Downloading year {year}...")
 
-        # Only request the 10m u and v wind components
+        # Request wind components plus 2m temperature and total precipitation
         request = {
             "product_type": "reanalysis",
-            "variable": [
-                "10m_u_component_of_wind",
-                "10m_v_component_of_wind",
-            ],
+            "variable": list(ERA5_VARIABLES),
             "year": str(year),
             "month": [f"{m:02d}" for m in range(1, 13)],
             "day": [f"{d:02d}" for d in range(1, 32)],

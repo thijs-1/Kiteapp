@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import ORJSONResponse
 
 from backend.config import settings
-from backend.api.routes import spots, histograms, windrose, daily_wind
+from backend.api.routes import spots, histograms, windrose, daily_wind, weather
 from backend.api.dependencies import get_histogram_repository
 
 
@@ -39,6 +39,7 @@ app.include_router(spots.router)
 app.include_router(histograms.router)
 app.include_router(windrose.router)
 app.include_router(daily_wind.router)
+app.include_router(weather.router)
 
 
 @app.get("/")

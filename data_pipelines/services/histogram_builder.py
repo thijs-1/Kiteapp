@@ -3,7 +3,14 @@ from typing import Dict, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from data_pipelines.config import WIND_BINS, DIRECTION_BINS, DAYS_OF_YEAR, FILTER_DAYLIGHT_HOURS
+from data_pipelines.config import (
+    WIND_BINS,
+    DIRECTION_BINS,
+    TEMPERATURE_BINS,
+    PRECIPITATION_BINS,
+    DAYS_OF_YEAR,
+    FILTER_DAYLIGHT_HOURS,
+)
 from data_pipelines.models.histogram import DailyHistogram1D, DailyHistogram2D
 from data_pipelines.services.daylight_service import DaylightService
 
@@ -15,6 +22,8 @@ class HistogramBuilder:
         self,
         wind_bins: list = None,
         direction_bins: list = None,
+        temperature_bins: list = None,
+        precipitation_bins: list = None,
         filter_daylight: bool = FILTER_DAYLIGHT_HOURS,
     ):
         """
@@ -23,10 +32,14 @@ class HistogramBuilder:
         Args:
             wind_bins: Wind speed bin edges
             direction_bins: Wind direction bin edges
+            temperature_bins: Temperature bin edges (degrees Celsius)
+            precipitation_bins: Precipitation bin edges (mm per hour)
             filter_daylight: Whether to filter out nighttime data
         """
         self.wind_bins = wind_bins or WIND_BINS
         self.direction_bins = direction_bins or DIRECTION_BINS
+        self.temperature_bins = temperature_bins or TEMPERATURE_BINS
+        self.precipitation_bins = precipitation_bins or PRECIPITATION_BINS
         self.filter_daylight = filter_daylight
 
         # Initialize daylight service for filtering
@@ -133,6 +146,88 @@ class HistogramBuilder:
             spot_id=spot_id,
             bins=self.wind_bins,
             daily_counts=daily_counts,
+        )
+
+    def build_daily_value_histogram(
+        self,
+        spot_id: str,
+        timestamps: np.ndarray,
+        values: np.ndarray,
+        bins: list,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+    ) -> DailyHistogram1D:
+        """
+        Build daily 1D histograms for an arbitrary value series.
+
+        Used for temperature and precipitation, which follow the same daily
+        histogram pattern as wind strength. NaN values (gaps in the time
+        series, e.g. chunks processed before the variable was added) are
+        excluded from the counts.
+
+        Args:
+            spot_id: ID of the spot
+            timestamps: Array of timestamps (UTC)
+            values: Array of values to bin
+            bins: Bin edges to histogram the values with
+            latitude: Spot latitude for daylight filtering
+            longitude: Spot longitude for daylight filtering
+
+        Returns:
+            DailyHistogram1D with aggregated daily counts
+        """
+        # Apply daylight filter if enabled
+        timestamps, values, _ = self._apply_daylight_filter(
+            timestamps, values, np.zeros_like(values), latitude, longitude
+        )
+
+        # Drop NaN values (missing data must not be counted in any bin)
+        valid = ~np.isnan(values)
+        timestamps = timestamps[valid]
+        values = values[valid]
+
+        day_of_year = self._get_day_of_year(timestamps)
+        unique_days = sorted(set(day_of_year))
+
+        daily_counts: Dict[str, np.ndarray] = {}
+
+        for day in unique_days:
+            mask = day_of_year == day
+            counts, _ = np.histogram(values[mask], bins=bins)
+            daily_counts[day] = counts
+
+        return DailyHistogram1D(
+            spot_id=spot_id,
+            bins=bins,
+            daily_counts=daily_counts,
+        )
+
+    def build_daily_temperature_histogram(
+        self,
+        spot_id: str,
+        timestamps: np.ndarray,
+        temperature: np.ndarray,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+    ) -> DailyHistogram1D:
+        """Build daily histograms of daytime temperature (degrees Celsius)."""
+        return self.build_daily_value_histogram(
+            spot_id, timestamps, temperature, self.temperature_bins,
+            latitude, longitude,
+        )
+
+    def build_daily_precipitation_histogram(
+        self,
+        spot_id: str,
+        timestamps: np.ndarray,
+        precipitation: np.ndarray,
+        latitude: Optional[float] = None,
+        longitude: Optional[float] = None,
+    ) -> DailyHistogram1D:
+        """Build daily histograms of hourly precipitation (mm)."""
+        return self.build_daily_value_histogram(
+            spot_id, timestamps, precipitation, self.precipitation_bins,
+            latitude, longitude,
         )
 
     def build_daily_2d_histogram(

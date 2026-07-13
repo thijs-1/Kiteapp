@@ -49,9 +49,10 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 - `PipelineOrchestrator` in `main.py` coordinates the workflow
 - Divides globe into 90°×60° grid cells (12 total, ~6-8 cells with spots)
 - Downloads ERA5 data via CDS API (Copernicus, default) or ARCO (Google Cloud)
-- Processes wind components (u,v) to strength/direction
-- Builds daily histograms: 1D (strength only) and 2D (strength × direction)
+- Processes wind components (u,v) to strength/direction; also extracts 2m temperature (°C) and hourly precipitation (mm)
+- Builds daily histograms: 1D (strength only), 2D (strength × direction), plus temperature and precipitation 1D
 - Wind bins: 2.5 knot increments (0-35 + infinity), direction: 10-degree increments
+- Temperature bins: 2.5°C increments (-20 to 45 + infinity), precipitation bins: 2.5mm increments (0-25 + infinity)
 
 ### Frontend (frontend/src/)
 - **State**: Zustand stores in `store/` (filterStore, spotStore)
@@ -78,6 +79,14 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 - Wind strength: converted from m/s to knots, combined from u/v components
 - Wind direction: "going to" compass direction (90° = wind from west going east)
 - Histogram shapes: 1D is 365×16, 2D is 365×16×36
+
+## Temperature & Precipitation Data
+
+- 2m temperature: converted from Kelvin to °C; daylight-filtered like wind, so histograms reflect daytime temperature
+- Total precipitation: ERA5 hourly accumulation converted from m to mm (mm per hour)
+- Saved as `data/processed/histograms_temperature.pkl` and `histograms_precipitation.pkl` (same `{spot_ids, bins, days, data}` layout as `histograms_1d.pkl`)
+- Served via `GET /spots/{spot_id}/weather/{temperature|precipitation}/daily`
+- Time series `.npz` files written before these variables existed still load (missing values stored as NaN, excluded from histograms); re-download raw data with `--force-download` to backfill them
 
 ## ERA5 Data Sources
 

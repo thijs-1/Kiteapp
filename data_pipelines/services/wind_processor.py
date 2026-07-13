@@ -4,7 +4,7 @@ from typing import Tuple, Dict, Optional, List
 import numpy as np
 import xarray as xr
 
-from data_pipelines.config import MS_TO_KNOTS
+from data_pipelines.config import MS_TO_KNOTS, KELVIN_TO_CELSIUS_OFFSET, M_TO_MM
 from data_pipelines.models.spot import Spot
 from data_pipelines.models.grid import BoundingBox
 
@@ -50,6 +50,20 @@ class WindProcessor:
         # Normalize to [0, 360)
         direction = (direction + 360) % 360
         return direction
+
+    def calculate_temperature_celsius(self, t2m: np.ndarray) -> np.ndarray:
+        """Convert 2m temperature from Kelvin to degrees Celsius."""
+        return t2m - KELVIN_TO_CELSIUS_OFFSET
+
+    def calculate_precipitation_mm(self, tp: np.ndarray) -> np.ndarray:
+        """
+        Convert total precipitation from meters to millimeters.
+
+        ERA5 hourly total_precipitation is the accumulation over the hour,
+        so the result is mm of rain per hour. Tiny negative values (numerical
+        noise in ERA5 accumulations) are clamped to zero.
+        """
+        return np.maximum(tp * M_TO_MM, 0.0)
 
     def load_netcdf(self, nc_path: Path) -> xr.Dataset:
         """Load a NetCDF file."""
@@ -110,6 +124,10 @@ class WindProcessor:
                 - 'time': Array of timestamps
                 - 'strength': Array of wind strength in knots
                 - 'direction': Array of wind direction in degrees
+                - 'temperature': Array of 2m temperature in Celsius (None if
+                  the dataset has no t2m variable, e.g. older raw files)
+                - 'precipitation': Array of hourly precipitation in mm (None
+                  if the dataset has no tp variable)
         """
         # Find nearest grid point
         lat_idx, lon_idx = self.find_nearest_point(ds, spot.latitude, spot.longitude)
@@ -124,10 +142,23 @@ class WindProcessor:
         strength = self.calculate_wind_strength(u, v)
         direction = self.calculate_wind_direction(u, v)
 
+        # Temperature and precipitation are optional (older files only have wind)
+        temperature = None
+        if "t2m" in ds:
+            t2m = ds["t2m"].isel(latitude=lat_idx, longitude=lon_idx).values
+            temperature = self.calculate_temperature_celsius(t2m)
+
+        precipitation = None
+        if "tp" in ds:
+            tp = ds["tp"].isel(latitude=lat_idx, longitude=lon_idx).values
+            precipitation = self.calculate_precipitation_mm(tp)
+
         return {
             "time": time,
             "strength": strength,
             "direction": direction,
+            "temperature": temperature,
+            "precipitation": precipitation,
         }
 
     def process_netcdf_for_spot(
@@ -181,6 +212,10 @@ class WindProcessor:
                 - 'time': Array of timestamps (shape: num_times)
                 - 'strength': Array of wind strength in knots (shape: num_times x num_spots)
                 - 'direction': Array of wind direction in degrees (shape: num_times x num_spots)
+                - 'temperature': 2m temperature in Celsius (shape: num_times x num_spots,
+                  None if the dataset has no t2m variable)
+                - 'precipitation': Hourly precipitation in mm (shape: num_times x num_spots,
+                  None if the dataset has no tp variable)
         """
         # Subset to cell's bounding box FIRST (reduces memory)
         # Note: latitude may be in descending order in ERA5
@@ -230,8 +265,29 @@ class WindProcessor:
         strength = self.calculate_wind_strength(u_values, v_values)
         direction = self.calculate_wind_direction(u_values, v_values)
 
+        # Temperature and precipitation are optional (older files only have wind)
+        temperature = None
+        if "t2m" in cell_ds:
+            t2m_all = cell_ds["t2m"].interp(
+                latitude=spot_lats,
+                longitude=spot_lons,
+                method="linear",
+            ).compute()
+            temperature = self.calculate_temperature_celsius(t2m_all.values)
+
+        precipitation = None
+        if "tp" in cell_ds:
+            tp_all = cell_ds["tp"].interp(
+                latitude=spot_lats,
+                longitude=spot_lons,
+                method="linear",
+            ).compute()
+            precipitation = self.calculate_precipitation_mm(tp_all.values)
+
         return {
             "time": time,
             "strength": strength,   # shape: (num_times, num_spots)
             "direction": direction,  # shape: (num_times, num_spots)
+            "temperature": temperature,   # shape: (num_times, num_spots) or None
+            "precipitation": precipitation,  # shape: (num_times, num_spots) or None
         }
