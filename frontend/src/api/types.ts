@@ -62,6 +62,16 @@ export interface WindRoseData {
   data: number[][];
 }
 
+export type WeatherVariable = 'temperature' | 'precipitation';
+
+export interface WeatherHistogramData {
+  spot_id: string;
+  variable: WeatherVariable;
+  unit: string; // "celsius" or "mm"
+  bins: number[];
+  daily_data: Record<string, number[]>;
+}
+
 export interface DayProfile {
   date: string;
   hours: number[];

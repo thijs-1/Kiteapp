@@ -4,6 +4,8 @@ import { KiteableLineChart } from './Charts/KiteableLineChart';
 import { WindHistogram } from './Charts/WindHistogram';
 import { WindRose } from './Charts/WindRose';
 import { DailyWindChart } from './Charts/DailyWindChart';
+import { TemperatureChart } from './Charts/TemperatureChart';
+import { PrecipitationChart } from './Charts/PrecipitationChart';
 import { AirportsCard } from './AirportsCard';
 
 // Memoized chart components to prevent re-renders when only activeIndex changes
@@ -11,6 +13,8 @@ const MemoKiteableLineChart = memo(KiteableLineChart);
 const MemoWindHistogram = memo(WindHistogram);
 const MemoWindRose = memo(WindRose);
 const MemoDailyWindChart = memo(DailyWindChart);
+const MemoTemperatureChart = memo(TemperatureChart);
+const MemoPrecipitationChart = memo(PrecipitationChart);
 const MemoAirportsCard = memo(AirportsCard);
 
 interface CarouselProps {
@@ -40,6 +44,8 @@ export function Carousel({ spot, airports }: CarouselProps) {
       { title: 'Wind Strength Distribution', element: <MemoWindHistogram spotId={spot.spot_id} /> },
       { title: 'Wind Rose', element: <MemoWindRose spotId={spot.spot_id} /> },
       { title: 'Daily Wind Profiles', element: <MemoDailyWindChart spotId={spot.spot_id} /> },
+      { title: 'Daytime Temperature', element: <MemoTemperatureChart spotId={spot.spot_id} /> },
+      { title: 'Rain', element: <MemoPrecipitationChart spotId={spot.spot_id} /> },
     ];
     if (airports.length > 0) {
       items.push({
