@@ -25,9 +25,13 @@ from data_pipelines.config import (
     FILTER_DAYLIGHT_HOURS,
     HISTOGRAMS_1D_FILE,
     HISTOGRAMS_2D_DIR,
+    HISTOGRAMS_TEMPERATURE_FILE,
+    HISTOGRAMS_PRECIPITATION_FILE,
     RAW_DATA_DIR,
     TIMESERIES_DIR,
     WIND_BINS,
+    TEMPERATURE_BINS,
+    PRECIPITATION_BINS,
     DAYS_OF_YEAR,
 )
 from data_pipelines.services.grid_service import GridService
@@ -85,6 +89,12 @@ class PipelineOrchestrator:
         self._day_to_idx = {day: idx for idx, day in enumerate(DAYS_OF_YEAR)}
         self._num_bins = len(WIND_BINS) - 1
 
+        # Accumulators for temperature/precipitation histogram data
+        self._temperature_data: Dict[str, np.ndarray] = {}
+        self._precipitation_data: Dict[str, np.ndarray] = {}
+        self._num_temperature_bins = len(TEMPERATURE_BINS) - 1
+        self._num_precipitation_bins = len(PRECIPITATION_BINS) - 1
+
         # Spot coordinate lookup for daylight filtering
         # Built lazily on first access
         self._spot_coords: Optional[Dict[str, tuple]] = None
@@ -116,7 +126,8 @@ class PipelineOrchestrator:
         Extract wind data for all spots from a dataset using vectorized interpolation.
 
         Returns:
-            Dict mapping spot_id -> {'time', 'strength', 'direction'}
+            Dict mapping spot_id -> {'time', 'strength', 'direction',
+            'temperature', 'precipitation'} (last two None if unavailable)
         """
         wind_data = self.wind_processor.extract_cell_spots_data(ds, spots, bbox)
 
@@ -132,10 +143,14 @@ class PipelineOrchestrator:
                 seen_ids[key] = seen_ids.get(key, 1) + 1
                 key = f"{spot.spot_id}_{seen_ids[key]}"
 
+            temperature = wind_data.get("temperature")
+            precipitation = wind_data.get("precipitation")
             result[key] = {
                 "time": wind_data["time"],
                 "strength": wind_data["strength"][:, i],
                 "direction": wind_data["direction"][:, i],
+                "temperature": temperature[:, i] if temperature is not None else None,
+                "precipitation": precipitation[:, i] if precipitation is not None else None,
             }
         return result
 
@@ -189,6 +204,8 @@ class PipelineOrchestrator:
                             data["time"],
                             data["strength"],
                             data["direction"],
+                            temperature=data["temperature"],
+                            precipitation=data["precipitation"],
                         )
 
                 stats["chunks_processed"] += 1
@@ -308,6 +325,8 @@ class PipelineOrchestrator:
                                     data["time"],
                                     data["strength"],
                                     data["direction"],
+                                    temperature=data["temperature"],
+                                    precipitation=data["precipitation"],
                                 )
                                 stats["spots_extracted"] += 1
 
@@ -365,46 +384,146 @@ class PipelineOrchestrator:
         """Save 2D histogram data to pickle file."""
         save_pickle(hist_2d.to_dict(), HISTOGRAMS_2D_DIR / f"{spot_id}.pkl")
 
-    def add_histogram_1d(self, spot_id: str, hist_1d) -> None:
-        """Add 1D histogram to accumulator."""
-        arr = np.zeros((len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
-        for day, counts in hist_1d.daily_counts.items():
-            if day in self._day_to_idx:
-                arr[self._day_to_idx[day]] = counts
-        self._histogram_1d_data[spot_id] = arr
+    def _add_daily_histogram(
+        self,
+        accumulator: Dict[str, np.ndarray],
+        num_bins: int,
+        spot_id: str,
+        hist_1d,
+    ) -> None:
+        """
+        Add a daily 1D histogram to an accumulator as a (366, num_bins) array.
 
-    def save_all_1d_histograms(self) -> None:
-        """Save all accumulated 1D histograms as a single 3D array."""
-        if not self._histogram_1d_data:
-            print("No 1D histogram data to save.")
+        A None histogram stores an all-zero array, so spots without data for
+        a variable (e.g. time series from before temperature/precipitation
+        were added) are still recorded and can be skipped on the next run.
+        """
+        arr = np.zeros((len(DAYS_OF_YEAR), num_bins), dtype=np.float32)
+        if hist_1d is not None:
+            for day, counts in hist_1d.daily_counts.items():
+                if day in self._day_to_idx:
+                    arr[self._day_to_idx[day]] = counts
+        accumulator[spot_id] = arr
+
+    def add_histogram_1d(self, spot_id: str, hist_1d) -> None:
+        """Add 1D wind histogram to accumulator."""
+        self._add_daily_histogram(self._histogram_1d_data, self._num_bins, spot_id, hist_1d)
+
+    def add_histogram_temperature(self, spot_id: str, hist_1d) -> None:
+        """Add daily temperature histogram to accumulator (None stores zeros)."""
+        self._add_daily_histogram(
+            self._temperature_data, self._num_temperature_bins, spot_id, hist_1d
+        )
+
+    def add_histogram_precipitation(self, spot_id: str, hist_1d) -> None:
+        """Add daily precipitation histogram to accumulator (None stores zeros)."""
+        self._add_daily_histogram(
+            self._precipitation_data, self._num_precipitation_bins, spot_id, hist_1d
+        )
+
+    def _save_daily_histograms(
+        self,
+        accumulator: Dict[str, np.ndarray],
+        bins: list,
+        num_bins: int,
+        output_file: Path,
+        label: str,
+    ) -> None:
+        """Save an accumulator of daily histograms as a single 3D array pickle."""
+        if not accumulator:
+            print(f"No {label} histogram data to save.")
             return
 
-        spot_ids = list(self._histogram_1d_data.keys())
+        spot_ids = list(accumulator.keys())
         num_spots = len(spot_ids)
 
-        data = np.zeros((num_spots, len(DAYS_OF_YEAR), self._num_bins), dtype=np.float32)
+        data = np.zeros((num_spots, len(DAYS_OF_YEAR), num_bins), dtype=np.float32)
         for i, spot_id in enumerate(spot_ids):
-            data[i] = self._histogram_1d_data[spot_id]
+            data[i] = accumulator[spot_id]
 
         result = {
             "spot_ids": spot_ids,
-            "bins": WIND_BINS,
+            "bins": bins,
             "days": DAYS_OF_YEAR,
             "data": data,
         }
 
-        save_pickle(result, HISTOGRAMS_1D_FILE)
-        print(f"Saved 1D histograms: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {self._num_bins} bins")
+        save_pickle(result, output_file)
+        print(f"Saved {label} histograms: {num_spots} spots x {len(DAYS_OF_YEAR)} days x {num_bins} bins")
+
+    def save_all_1d_histograms(self) -> None:
+        """Save all accumulated 1D histograms (wind, temperature, precipitation)."""
+        self._save_daily_histograms(
+            self._histogram_1d_data, WIND_BINS, self._num_bins,
+            HISTOGRAMS_1D_FILE, "1D wind",
+        )
+        self._save_daily_histograms(
+            self._temperature_data, TEMPERATURE_BINS, self._num_temperature_bins,
+            HISTOGRAMS_TEMPERATURE_FILE, "temperature",
+        )
+        self._save_daily_histograms(
+            self._precipitation_data, PRECIPITATION_BINS, self._num_precipitation_bins,
+            HISTOGRAMS_PRECIPITATION_FILE, "precipitation",
+        )
+
+    def _load_existing_daily_histograms(
+        self,
+        accumulator: Dict[str, np.ndarray],
+        input_file: Path,
+        label: str,
+    ) -> None:
+        """Load existing daily histogram data into an accumulator if available."""
+        if not input_file.exists():
+            return
+        import pickle
+        with open(input_file, "rb") as f:
+            existing = pickle.load(f)
+        for i, spot_id in enumerate(existing["spot_ids"]):
+            accumulator[spot_id] = existing["data"][i]
+        print(f"Loaded {len(accumulator)} existing {label} histograms")
 
     def load_existing_1d_histograms(self) -> None:
         """Load existing 1D histogram data if available."""
-        if HISTOGRAMS_1D_FILE.exists() and self.skip_existing_histograms:
-            import pickle
-            with open(HISTOGRAMS_1D_FILE, "rb") as f:
-                existing = pickle.load(f)
-            for i, spot_id in enumerate(existing["spot_ids"]):
-                self._histogram_1d_data[spot_id] = existing["data"][i]
-            print(f"Loaded {len(self._histogram_1d_data)} existing 1D histograms")
+        if not self.skip_existing_histograms:
+            return
+        self._load_existing_daily_histograms(
+            self._histogram_1d_data, HISTOGRAMS_1D_FILE, "1D wind"
+        )
+        self._load_existing_daily_histograms(
+            self._temperature_data, HISTOGRAMS_TEMPERATURE_FILE, "temperature"
+        )
+        self._load_existing_daily_histograms(
+            self._precipitation_data, HISTOGRAMS_PRECIPITATION_FILE, "precipitation"
+        )
+
+    def _build_weather_histograms(
+        self,
+        spot_id: str,
+        data: Dict[str, np.ndarray],
+        latitude: Optional[float],
+        longitude: Optional[float],
+    ):
+        """
+        Build temperature and precipitation histograms for a spot.
+
+        Returns (hist_temperature, hist_precipitation); either is None when
+        the time series has no data for that variable.
+        """
+        hist_temp = None
+        if data.get("temperature") is not None:
+            hist_temp = self.histogram_builder.build_daily_temperature_histogram(
+                spot_id, data["time"], data["temperature"],
+                latitude=latitude, longitude=longitude,
+            )
+
+        hist_precip = None
+        if data.get("precipitation") is not None:
+            hist_precip = self.histogram_builder.build_daily_precipitation_histogram(
+                spot_id, data["time"], data["precipitation"],
+                latitude=latitude, longitude=longitude,
+            )
+
+        return hist_temp, hist_precip
 
     def run_phase2(self) -> dict:
         """
@@ -441,8 +560,12 @@ class PipelineOrchestrator:
             # Check if already processed
             has_1d = spot_id in self._histogram_1d_data
             has_2d = self.histogram_2d_exists(spot_id)
+            has_weather = (
+                spot_id in self._temperature_data
+                and spot_id in self._precipitation_data
+            )
 
-            if self.skip_existing_histograms and has_1d and has_2d:
+            if self.skip_existing_histograms and has_1d and has_2d and has_weather:
                 stats["spots_skipped"] += 1
                 continue
 
@@ -463,6 +586,9 @@ class PipelineOrchestrator:
                 latitude=latitude,
                 longitude=longitude,
             )
+            hist_temp, hist_precip = self._build_weather_histograms(
+                spot_id, data, latitude, longitude
+            )
 
             # Save (always save when force-processing)
             force = not self.skip_existing_histograms
@@ -470,6 +596,9 @@ class PipelineOrchestrator:
                 self.add_histogram_1d(spot_id, hist_1d)
             if not has_2d or force:
                 self.save_histogram_2d(spot_id, hist_2d)
+            if not has_weather or force:
+                self.add_histogram_temperature(spot_id, hist_temp)
+                self.add_histogram_precipitation(spot_id, hist_precip)
 
             stats["spots_processed"] += 1
 
@@ -522,8 +651,12 @@ class PipelineOrchestrator:
             for spot in cell.spots:
                 has_1d = spot.spot_id in self._histogram_1d_data
                 has_2d = self.histogram_2d_exists(spot.spot_id)
+                has_weather = (
+                    spot.spot_id in self._temperature_data
+                    and spot.spot_id in self._precipitation_data
+                )
 
-                if self.skip_existing_histograms and has_1d and has_2d:
+                if self.skip_existing_histograms and has_1d and has_2d and has_weather:
                     stats["spots_skipped"] += 1
                     continue
 
@@ -540,12 +673,18 @@ class PipelineOrchestrator:
                     latitude=spot.latitude,
                     longitude=spot.longitude,
                 )
+                hist_temp, hist_precip = self._build_weather_histograms(
+                    spot.spot_id, wind_data, spot.latitude, spot.longitude
+                )
 
                 force = not self.skip_existing_histograms
                 if not has_1d or force:
                     self.add_histogram_1d(spot.spot_id, hist_1d)
                 if not has_2d or force:
                     self.save_histogram_2d(spot.spot_id, hist_2d)
+                if not has_weather or force:
+                    self.add_histogram_temperature(spot.spot_id, hist_temp)
+                    self.add_histogram_precipitation(spot.spot_id, hist_precip)
 
                 stats["spots_processed"] += 1
 

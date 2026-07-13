@@ -4,11 +4,13 @@ from functools import lru_cache
 from backend.data.spot_repository import SpotRepository
 from backend.data.histogram_repository import HistogramRepository
 from backend.data.timeseries_repository import TimeseriesRepository
+from backend.data.weather_repository import WeatherHistogramRepository
 from backend.services.spot_service import SpotService
 from backend.services.histogram_service import HistogramService
 from backend.services.windrose_service import WindRoseService
 from backend.services.daily_wind_service import DailyWindService
 from backend.services.map_image_service import MapImageService
+from backend.services.weather_service import WeatherService
 
 
 @lru_cache()
@@ -36,6 +38,19 @@ def get_histogram_service() -> HistogramService:
     """Get histogram service instance."""
     return HistogramService(
         histogram_repo=get_histogram_repository(),
+    )
+
+
+@lru_cache()
+def get_weather_repository() -> WeatherHistogramRepository:
+    """Get cached weather histogram repository instance."""
+    return WeatherHistogramRepository()
+
+
+def get_weather_service() -> WeatherService:
+    """Get weather service instance."""
+    return WeatherService(
+        weather_repo=get_weather_repository(),
     )
 
 

@@ -24,9 +24,20 @@ ARCO_ZARR_URL = "gs://gcp-public-data-arco-era5/ar/full_37-1h-0p25deg-chunk-1.za
 # Variable names in the hourly dataset (full names in this dataset)
 ARCO_VAR_U10 = "10m_u_component_of_wind"
 ARCO_VAR_V10 = "10m_v_component_of_wind"
+ARCO_VAR_T2M = "2m_temperature"
+ARCO_VAR_TP = "total_precipitation"
 
-# Bytes per hour of global ERA5 data: 721 lat × 1440 lon × 2 vars × 4 bytes (float32)
-_BYTES_PER_HOUR_GLOBAL = 721 * 1440 * 2 * 4  # ~7.93 MB
+# Downloaded variables and their short names used in the saved NetCDF files
+ARCO_VARIABLES = [ARCO_VAR_U10, ARCO_VAR_V10, ARCO_VAR_T2M, ARCO_VAR_TP]
+ARCO_VAR_RENAMES = {
+    ARCO_VAR_U10: "u10",
+    ARCO_VAR_V10: "v10",
+    ARCO_VAR_T2M: "t2m",
+    ARCO_VAR_TP: "tp",
+}
+
+# Bytes per hour of global ERA5 data: 721 lat × 1440 lon × vars × 4 bytes (float32)
+_BYTES_PER_HOUR_GLOBAL = 721 * 1440 * len(ARCO_VARIABLES) * 4  # ~15.9 MB
 
 
 class ARCOService:
@@ -170,20 +181,16 @@ class ARCOService:
 
     def _fetch_global_subset(self, ds, start_date: str, end_date: str):
         """Select a global time slice, rename variables, and convert coordinates."""
-        subset = ds.sel(time=slice(start_date, end_date))[[ARCO_VAR_U10, ARCO_VAR_V10]]
+        subset = ds.sel(time=slice(start_date, end_date))[ARCO_VARIABLES]
 
         time_count = len(subset.time)
         lat_count = len(subset.latitude)
         lon_count = len(subset.longitude)
-        estimated_gb = (time_count * lat_count * lon_count * 2 * 4) / 1024**3
+        estimated_gb = (time_count * lat_count * lon_count * len(ARCO_VARIABLES) * 4) / 1024**3
         print(f"      Size: {time_count} hours x {lat_count} lat x {lon_count} lon "
               f"(~{estimated_gb:.1f} GB uncompressed)")
 
-        subset = subset.rename({
-            ARCO_VAR_U10: "u10",
-            ARCO_VAR_V10: "v10",
-            "time": "valid_time",
-        })
+        subset = subset.rename({**ARCO_VAR_RENAMES, "time": "valid_time"})
 
         # Convert longitude from 0-360 to -180 to 180
         lons = subset.longitude.values
@@ -347,21 +354,17 @@ class ARCOService:
             time=slice(start_date, end_date),
             latitude=slice(bbox.north, bbox.south),  # Descending: north to south
             longitude=slice(west_360, east_360),
-        )[[ARCO_VAR_U10, ARCO_VAR_V10]]
+        )[ARCO_VARIABLES]
 
         # Print size info
         time_count = len(subset.time)
         lat_count = len(subset.latitude)
         lon_count = len(subset.longitude)
-        estimated_mb = (time_count * lat_count * lon_count * 2 * 4) / 1024 / 1024
+        estimated_mb = (time_count * lat_count * lon_count * len(ARCO_VARIABLES) * 4) / 1024 / 1024
         print(f"      Sliced: {time_count} times x {lat_count} lat x {lon_count} lon (~{estimated_mb:.1f} MB)")
 
         # Rename variables and time coordinate to match expected format
-        subset = subset.rename({
-            ARCO_VAR_U10: "u10",
-            ARCO_VAR_V10: "v10",
-            "time": "valid_time",
-        })
+        subset = subset.rename({**ARCO_VAR_RENAMES, "time": "valid_time"})
 
         # Convert longitude from 0-360 to -180 to 180 if needed
         lons = subset.longitude.values
