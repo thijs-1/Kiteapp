@@ -52,7 +52,7 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 - Processes wind components (u,v) to strength/direction; also extracts 2m temperature (°C) and hourly precipitation (mm)
 - Builds daily histograms: 1D (strength only), 2D (strength × direction), plus temperature and precipitation 1D
 - Wind bins: 2.5 knot increments (0-35 + infinity), direction: 10-degree increments
-- Temperature bins: 2.5°C increments (-20 to 45 + infinity), precipitation bins: 0.5mm increments (0-5 + infinity)
+- Temperature bins: 2.5°C increments (-20 to 45 + infinity), precipitation bins: dry bin (0-0.01mm), then 0.5mm increments (0.01-5 + infinity)
 
 ### Frontend (frontend/src/)
 - **State**: Zustand stores in `store/` (filterStore, spotStore)

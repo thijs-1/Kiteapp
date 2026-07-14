@@ -17,9 +17,10 @@ import { ChartDateRangeSelector } from './ChartDateRangeSelector';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-// Fixed color map for the rainy 0.5 mm/h bins (the dry 0-0.5 bin is not
-// plotted): light to dark blue with increasing rain intensity.
+// Fixed color map for the rainy bins (the dry 0-0.01 bin is not plotted):
+// light to dark blue with increasing rain intensity.
 const RAIN_COLORS = [
+  '#EFF6FF', // 0.01-0.5: trace
   '#DBEAFE', // 0.5-1
   '#BFDBFE', // 1-1.5
   '#93C5FD', // 1.5-2
@@ -32,7 +33,7 @@ const RAIN_COLORS = [
   '#172554', // 5+
 ];
 
-// The first bin (0-0.5 mm/h) holds the dry hours and is excluded from the stack
+// The first bin (0-0.01 mm/h) holds the dry hours and is excluded from the stack
 const FIRST_RAIN_BIN = 1;
 
 interface Props {

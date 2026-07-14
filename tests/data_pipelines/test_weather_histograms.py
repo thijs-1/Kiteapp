@@ -78,20 +78,21 @@ class TestBuildDailyValueHistogram:
 
         assert hist.daily_counts["06-21"][-1] == 1
 
-    def test_precipitation_histogram_uses_0_5_mm_bins(self):
-        timestamps = make_hourly_timestamps("2024-06-21", 4)
-        # Dry hour, drizzle, moderate rain, extreme downpour
-        values = np.array([0.0, 0.4, 1.2, 100.0], dtype=np.float32)
+    def test_precipitation_histogram_bins(self):
+        timestamps = make_hourly_timestamps("2024-06-21", 5)
+        # Dry, trace below dry threshold, drizzle, moderate rain, extreme downpour
+        values = np.array([0.0, 0.005, 0.4, 1.2, 100.0], dtype=np.float32)
 
         builder = HistogramBuilder(filter_daylight=False)
         hist = builder.build_daily_precipitation_histogram("spot", timestamps, values)
 
         assert hist.bins == PRECIPITATION_BINS
         counts = hist.daily_counts["06-21"]
-        assert counts[0] == 2  # [0, 0.5)
-        assert counts[2] == 1  # [1.0, 1.5)
+        assert counts[0] == 2  # [0, 0.01) dry
+        assert counts[1] == 1  # [0.01, 0.5) trace
+        assert counts[3] == 1  # [1.0, 1.5)
         assert counts[-1] == 1  # [5, inf)
-        assert counts.sum() == 4
+        assert counts.sum() == 5
 
     def test_counts_grouped_by_day_of_year(self):
         timestamps = make_hourly_timestamps("2024-06-21", 48)

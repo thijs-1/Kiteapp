@@ -45,8 +45,9 @@ DIRECTION_BINS = list(range(-5, 360, 10))
 # Daytime temperature bins: [-20, -17.5, ..., 45, inf] (2.5 degree Celsius increments)
 TEMPERATURE_BINS = list(np.arange(-20, 47.5, 2.5)) + [float('inf')]
 
-# Hourly precipitation bins: [0, 0.5, 1, ..., 5, inf] (0.5 mm increments)
-PRECIPITATION_BINS = list(np.arange(0, 5.5, 0.5)) + [float('inf')]
+# Hourly precipitation bins: a dry bin [0, 0.01), then trace rain up to 0.5,
+# then 0.5 mm increments to 5, then everything heavier: [5, inf)
+PRECIPITATION_BINS = [0.0, 0.01] + list(np.arange(0.5, 5.5, 0.5)) + [float('inf')]
 
 # Grid configuration (larger cells to reduce CDS queue requests)
 GRID_SIZE_LAT = 90  # degrees (2 cells latitude)
