@@ -12,12 +12,29 @@ import { Bar } from 'react-chartjs-2';
 import { useWeatherHistogram } from '../../../hooks/useWeather';
 import { useFilterStore } from '../../../store/filterStore';
 import { useIsMobile } from '../../../hooks/useIsMobile';
-import { aggregateDailyCounts, percentAtOrAboveBin } from '../../../utils/weatherStats';
+import { aggregateDailyCounts } from '../../../utils/weatherStats';
 import { ChartDateRangeSelector } from './ChartDateRangeSelector';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-const RAIN_COLOR = '#2563EB'; // Blue, distinct from the kite cyan
+// Fixed color map for the rainy bins (the dry 0-0.01 bin is not plotted):
+// light to dark blue with increasing rain intensity.
+const RAIN_COLORS = [
+  '#EFF6FF', // 0.01-0.5: trace
+  '#DBEAFE', // 0.5-1
+  '#BFDBFE', // 1-1.5
+  '#93C5FD', // 1.5-2
+  '#60A5FA', // 2-2.5
+  '#3B82F6', // 2.5-3
+  '#2563EB', // 3-3.5
+  '#1D4ED8', // 3.5-4
+  '#1E40AF', // 4-4.5
+  '#1E3A8A', // 4.5-5
+  '#172554', // 5+
+];
+
+// The first bin (0-0.01 mm/h) holds the dry hours and is excluded from the stack
+const FIRST_RAIN_BIN = 1;
 
 interface Props {
   spotId: string;
@@ -51,23 +68,32 @@ export function PrecipitationChart({ spotId }: Props) {
     endDate
   );
 
-  // Share of daytime hours beyond the first bin. With 2.5 mm bins the first
-  // bin (0-2.5 mm) contains the dry hours, so this counts hours with rain
-  // heavier than the first bin edge.
-  const rainThreshold = data.bins[1];
-  const rainyPercent = counts.map((c) => percentAtOrAboveBin(c, 1));
+  // Rainy bin labels; the last bin's upper edge is the sanitized infinity, so show "5+"
+  const binLabels = data.bins.slice(FIRST_RAIN_BIN, -1).map((bin, idx) => {
+    const nextIdx = FIRST_RAIN_BIN + idx + 1;
+    if (nextIdx === data.bins.length - 1) {
+      return `${bin}+`;
+    }
+    return `${bin}-${data.bins[nextIdx]}`;
+  });
+
+  // All daytime hours (dry included) as the denominator, so segment heights
+  // read as % of daytime hours with rain of that intensity
+  const totals = counts.map((c) => c.reduce((sum, v) => sum + v, 0));
+
+  // One stacked dataset per rainy bin; bar height totals % of hours with rain
+  const datasets = binLabels.map((label, idx) => ({
+    label: `${label} mm/h`,
+    data: counts.map((c, keyIdx) => {
+      const total = totals[keyIdx];
+      return total > 0 ? ((c[FIRST_RAIN_BIN + idx] || 0) / total) * 100 : 0;
+    }),
+    backgroundColor: RAIN_COLORS[idx] || '#999',
+  }));
 
   const chartData = {
     labels,
-    datasets: [
-      {
-        label: `Hours with rain ≥ ${rainThreshold} mm/h`,
-        data: rainyPercent,
-        backgroundColor: RAIN_COLOR,
-        borderRadius: 4,
-        maxBarThickness: 32,
-      },
-    ],
+    datasets,
   };
 
   const options: ChartOptions<'bar'> = {
@@ -75,36 +101,42 @@ export function PrecipitationChart({ spotId }: Props) {
     maintainAspectRatio: false,
     plugins: {
       legend: {
-        display: false, // Single series: the axis title names it
+        display: true,
+        position: isMobile ? 'bottom' as const : 'right' as const,
+        labels: {
+          boxWidth: isMobile ? 8 : 12,
+          font: { size: isMobile ? 8 : 10 },
+          padding: isMobile ? 4 : 10,
+        },
       },
       tooltip: {
         callbacks: {
           label: (item) => {
-            const value = item.raw as number | null;
-            if (value === null) return 'No data';
-            return `${value.toFixed(1)}% of daytime hours with rain ≥ ${rainThreshold} mm/h`;
+            return `${item.dataset.label}: ${(item.raw as number).toFixed(1)}%`;
           },
         },
       },
     },
     scales: {
-      y: {
-        beginAtZero: true,
-        suggestedMax: 10,
-        title: {
-          display: true,
-          text: `% of daytime hours with rain (≥ ${rainThreshold} mm/h)`,
-        },
-      },
       x: {
-        grid: {
-          display: false,
-        },
+        stacked: true,
         ticks: {
           maxRotation: level === 'daily' ? 45 : 0,
           autoSkip: true,
           maxTicksLimit: level === 'daily' ? (isMobile ? 7 : 15) : (isMobile ? 6 : 12),
           font: { size: level === 'daily' ? 9 : (isMobile ? 9 : 11) },
+        },
+        grid: {
+          display: false,
+        },
+      },
+      y: {
+        stacked: true,
+        beginAtZero: true,
+        suggestedMax: 10,
+        title: {
+          display: true,
+          text: '% of daytime hours with rain',
         },
       },
     },
