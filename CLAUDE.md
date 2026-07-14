@@ -52,7 +52,7 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 - Processes wind components (u,v) to strength/direction; also extracts 2m temperature (°C) and hourly precipitation (mm)
 - Builds daily histograms: 1D (strength only), 2D (strength × direction), plus temperature and precipitation 1D
 - Wind bins: 2.5 knot increments (0-35 + infinity), direction: 10-degree increments
-- Temperature bins: 2.5°C increments (-20 to 45 + infinity), precipitation bins: 2.5mm increments (0-25 + infinity)
+- Temperature bins: 2.5°C increments (-20 to 45 + infinity), precipitation bins: 0.5mm increments (0-5 + infinity)
 
 ### Frontend (frontend/src/)
 - **State**: Zustand stores in `store/` (filterStore, spotStore)
@@ -84,6 +84,7 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 
 - 2m temperature: converted from Kelvin to °C; daylight-filtered like wind, so histograms reflect daytime temperature
 - Total precipitation: ERA5 hourly accumulation converted from m to mm (mm per hour)
+- Both are bilinearly interpolated to the exact spot coordinates (in every extraction path; wind in the legacy CDS single-spot path still uses the nearest grid point)
 - Saved as `data/processed/histograms_temperature.pkl` and `histograms_precipitation.pkl` (same `{spot_ids, bins, days, data}` layout as `histograms_1d.pkl`)
 - Served via `GET /spots/{spot_id}/weather/{temperature|precipitation}/daily`
 - Time series `.npz` files written before these variables existed still load (missing values stored as NaN, excluded from histograms); re-download raw data with `--force-download` to backfill them

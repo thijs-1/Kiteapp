@@ -107,6 +107,26 @@ class WindProcessor:
 
         return lat_idx, lon_idx
 
+    def _interp_at_spot(self, da: xr.DataArray, spot: Spot) -> np.ndarray:
+        """
+        Bilinearly interpolate a data variable to a spot's exact coordinates.
+
+        Falls back to the nearest grid point if the spot lies outside the
+        dataset's coordinate range (where linear interpolation yields NaN).
+        """
+        values = da.interp(
+            latitude=spot.latitude,
+            longitude=spot.longitude,
+            method="linear",
+        ).values
+        if np.isnan(values).all():
+            values = da.sel(
+                latitude=spot.latitude,
+                longitude=spot.longitude,
+                method="nearest",
+            ).values
+        return values
+
     def extract_spot_data(
         self,
         ds: xr.Dataset,
@@ -124,10 +144,12 @@ class WindProcessor:
                 - 'time': Array of timestamps
                 - 'strength': Array of wind strength in knots
                 - 'direction': Array of wind direction in degrees
-                - 'temperature': Array of 2m temperature in Celsius (None if
-                  the dataset has no t2m variable, e.g. older raw files)
-                - 'precipitation': Array of hourly precipitation in mm (None
-                  if the dataset has no tp variable)
+                - 'temperature': Array of 2m temperature in Celsius, bilinearly
+                  interpolated to the spot location (None if the dataset has no
+                  t2m variable, e.g. older raw files)
+                - 'precipitation': Array of hourly precipitation in mm,
+                  bilinearly interpolated to the spot location (None if the
+                  dataset has no tp variable)
         """
         # Find nearest grid point
         lat_idx, lon_idx = self.find_nearest_point(ds, spot.latitude, spot.longitude)
@@ -145,12 +167,12 @@ class WindProcessor:
         # Temperature and precipitation are optional (older files only have wind)
         temperature = None
         if "t2m" in ds:
-            t2m = ds["t2m"].isel(latitude=lat_idx, longitude=lon_idx).values
+            t2m = self._interp_at_spot(ds["t2m"], spot)
             temperature = self.calculate_temperature_celsius(t2m)
 
         precipitation = None
         if "tp" in ds:
-            tp = ds["tp"].isel(latitude=lat_idx, longitude=lon_idx).values
+            tp = self._interp_at_spot(ds["tp"], spot)
             precipitation = self.calculate_precipitation_mm(tp)
 
         return {

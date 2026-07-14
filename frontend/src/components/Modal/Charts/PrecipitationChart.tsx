@@ -51,8 +51,8 @@ export function PrecipitationChart({ spotId }: Props) {
     endDate
   );
 
-  // Share of daytime hours beyond the first bin. With 2.5 mm bins the first
-  // bin (0-2.5 mm) contains the dry hours, so this counts hours with rain
+  // Share of daytime hours beyond the first bin. With 0.5 mm bins the first
+  // bin (0-0.5 mm) contains the dry hours, so this counts hours with rain
   // heavier than the first bin edge.
   const rainThreshold = data.bins[1];
   const rainyPercent = counts.map((c) => percentAtOrAboveBin(c, 1));
