@@ -17,10 +17,9 @@ import { ChartDateRangeSelector } from './ChartDateRangeSelector';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
-// Fixed color map for the 0.5 mm/h precipitation bins: near-white for the dry
-// bin (0-0.5), then light to dark blue with increasing rain intensity.
+// Fixed color map for the rainy 0.5 mm/h bins (the dry 0-0.5 bin is not
+// plotted): light to dark blue with increasing rain intensity.
 const RAIN_COLORS = [
-  '#F1F5F9', // 0-0.5: Dry
   '#DBEAFE', // 0.5-1
   '#BFDBFE', // 1-1.5
   '#93C5FD', // 1.5-2
@@ -32,6 +31,9 @@ const RAIN_COLORS = [
   '#1E3A8A', // 4.5-5
   '#172554', // 5+
 ];
+
+// The first bin (0-0.5 mm/h) holds the dry hours and is excluded from the stack
+const FIRST_RAIN_BIN = 1;
 
 interface Props {
   spotId: string;
@@ -65,25 +67,27 @@ export function PrecipitationChart({ spotId }: Props) {
     endDate
   );
 
-  // Bin labels; the last bin's upper edge is the sanitized infinity, so show "5+"
-  const binLabels = data.bins.slice(0, -1).map((bin, idx) => {
-    if (idx === data.bins.length - 2) {
+  // Rainy bin labels; the last bin's upper edge is the sanitized infinity, so show "5+"
+  const binLabels = data.bins.slice(FIRST_RAIN_BIN, -1).map((bin, idx) => {
+    const nextIdx = FIRST_RAIN_BIN + idx + 1;
+    if (nextIdx === data.bins.length - 1) {
       return `${bin}+`;
     }
-    return `${bin}-${data.bins[idx + 1]}`;
+    return `${bin}-${data.bins[nextIdx]}`;
   });
 
-  // Totals per period for normalization to % of daytime hours
+  // All daytime hours (dry included) as the denominator, so segment heights
+  // read as % of daytime hours with rain of that intensity
   const totals = counts.map((c) => c.reduce((sum, v) => sum + v, 0));
 
-  // One stacked dataset per precipitation bin, normalized to %
-  const datasets = binLabels.map((label, binIdx) => ({
+  // One stacked dataset per rainy bin; bar height totals % of hours with rain
+  const datasets = binLabels.map((label, idx) => ({
     label: `${label} mm/h`,
     data: counts.map((c, keyIdx) => {
       const total = totals[keyIdx];
-      return total > 0 ? ((c[binIdx] || 0) / total) * 100 : 0;
+      return total > 0 ? ((c[FIRST_RAIN_BIN + idx] || 0) / total) * 100 : 0;
     }),
-    backgroundColor: RAIN_COLORS[binIdx] || '#999',
+    backgroundColor: RAIN_COLORS[idx] || '#999',
   }));
 
   const chartData = {
@@ -127,11 +131,12 @@ export function PrecipitationChart({ spotId }: Props) {
       },
       y: {
         stacked: true,
+        beginAtZero: true,
+        suggestedMax: 10,
         title: {
           display: true,
-          text: '% of daytime hours',
+          text: '% of daytime hours with rain',
         },
-        max: 100,
       },
     },
   };
