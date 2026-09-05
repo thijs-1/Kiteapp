@@ -85,6 +85,30 @@ Download and process wind data from CDS:
 | ~4 GB during processing | ~120-160 GB |
 | ~8 GB final output | ~8 GB final output |
 
+### 2b. Prune to the Windiest Spots (optional)
+
+Once histograms exist, rank every spot by windiness and keep only the top
+3000. Start with a dry run to inspect the ranking
+(`data/processed/spot_windiness.csv`), then apply:
+
+```bash
+.\venv\Scripts\python -m scripts.prune_windy_spots --dry-run
+.\venv\Scripts\python -m scripts.prune_windy_spots
+```
+
+This also drops duplicate spot IDs and prunes `spots.pkl`, all daily
+histogram pickles, `histograms_2d/` and `data/timeseries/` consistently.
+Originals are backed up to `data/backup/prune_<timestamp>/`.
+
+| Flag | Description |
+|------|-------------|
+| `--top N` | Number of spots to keep (default 3000) |
+| `--metric kiteable\|mean` | Rank by % of daylight hours in the wind range (default) or mean knots |
+| `--wind-min`, `--wind-max` | Wind range in knots for the kiteable metric (default 15 and up) |
+| `--dry-run` | Analyze and write the report only |
+| `--no-backup` | Overwrite/delete in place |
+| `--keep-timeseries` | Leave `.npz` files of removed spots alone |
+
 ### 3. Start Backend
 
 ```bash
