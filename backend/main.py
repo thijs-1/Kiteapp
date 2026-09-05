@@ -8,6 +8,7 @@ from fastapi.responses import ORJSONResponse
 from backend.config import settings
 from backend.api.routes import spots, histograms, windrose, daily_wind, weather
 from backend.api.dependencies import get_histogram_repository
+from backend.middleware.activity_log import ActivityLogMiddleware, setup_activity_logging
 
 
 @asynccontextmanager
@@ -33,6 +34,20 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Request activity logging. Added after CORS so it wraps it and also sees
+# requests CORS rejects; OPTIONS preflights are skipped by the middleware.
+if settings.activity_log_enabled:
+    setup_activity_logging(
+        log_file=settings.activity_log_file,
+        retention_days=settings.activity_log_retention_days,
+        stdout=settings.activity_log_stdout,
+    )
+    app.add_middleware(
+        ActivityLogMiddleware,
+        exclude_paths=settings.activity_log_exclude_paths,
+        anonymize_ips=settings.activity_log_anonymize_ips,
+    )
 
 # Include routers
 app.include_router(spots.router)

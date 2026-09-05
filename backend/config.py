@@ -30,6 +30,22 @@ class Settings(BaseSettings):
     api_version: str = "1.0.0"
     cors_origins: list = ["http://wheretokite.com"]
 
+    # Request activity logging (one JSON line per request).
+    # Override with KITEAPP_ACTIVITY_LOG_* env vars; lists take JSON, e.g.
+    # KITEAPP_ACTIVITY_LOG_EXCLUDE_PATHS='["/health"]'
+    activity_log_enabled: bool = True
+    activity_log_file: Path = data_dir / "logs" / "activity.jsonl"
+    activity_log_retention_days: int = 30  # rotated daily, older files deleted
+    activity_log_stdout: bool = True  # mirror to stdout so journalctl shows it
+    activity_log_anonymize_ips: bool = False  # zero the IPv4 last octet / keep IPv6 /48
+    activity_log_exclude_paths: list = [
+        "/health",
+        "/docs",
+        "/docs/oauth2-redirect",
+        "/redoc",
+        "/openapi.json",
+    ]
+
     # Default filter values
     default_wind_min: float = 0.0
     default_wind_max: float = float("inf")
