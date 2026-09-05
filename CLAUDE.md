@@ -44,6 +44,7 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 - **Services** (`services/`) - Business logic: filtering, histogram processing, windrose calculation
 - **Repositories** (`data/`) - Data access layer loading pickle files
 - **Schemas** (`schemas/`) - Pydantic models for API contracts
+- **Middleware** (`middleware/`) - `ActivityLogMiddleware` writes one JSON line per request (IP, method, path, query, status, duration, user agent, referer) to `data/logs/activity.jsonl`, rotated daily; configured via `KITEAPP_ACTIVITY_LOG_*` settings in `backend/config.py`
 
 ### Data Pipeline (data_pipelines/)
 - `PipelineOrchestrator` in `main.py` coordinates the workflow
@@ -69,7 +70,7 @@ Pipeline flags: `--max-cells N`, `--cleanup`, `--force-download`, `--force-proce
 
 | File | Purpose |
 |------|---------|
-| `backend/config.py` | Settings, paths, CORS origins, filter defaults |
+| `backend/config.py` | Settings, paths, CORS origins, activity logging, filter defaults |
 | `data_pipelines/config.py` | Wind bins, direction bins, grid size, ERA5 config |
 | `frontend/vite.config.ts` | API proxy configuration |
 | `data/processed/spots.pkl` | Enriched spot data (tracked in git) |

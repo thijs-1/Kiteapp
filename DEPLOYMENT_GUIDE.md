@@ -13,8 +13,9 @@ Step-by-step guide for deploying Kiteapp on an Ubuntu server with nginx (no cont
 5. [Systemd Service Setup](#systemd-service-setup)
 6. [SSL/TLS Configuration](#ssltls-configuration)
 7. [Data Pipeline Setup](#data-pipeline-setup)
-8. [Troubleshooting](#troubleshooting)
-9. [Maintenance](#maintenance)
+8. [Activity Logging](#activity-logging)
+9. [Troubleshooting](#troubleshooting)
+10. [Maintenance](#maintenance)
 
 ---
 
@@ -470,6 +471,65 @@ Add this line (runs January 1st at 2 AM each year):
 
 ---
 
+## Activity Logging
+
+The backend logs every API request as one JSON line (`ActivityLogMiddleware` in
+`backend/middleware/activity_log.py`). Each record has: UTC timestamp, client
+IP, method, path, query string, status code, duration in ms, user agent and
+referer. Health checks, the docs pages and CORS preflights are skipped.
+
+Behind nginx the client IP is taken from `X-Forwarded-For` (first hop), then
+`X-Real-IP`, then the socket address, so the proxy headers in the nginx config
+above are required for real visitor IPs.
+
+### Where the log goes
+
+- File: `data/logs/activity.jsonl` by default, rotated daily at midnight UTC,
+  30 days kept (`activity.jsonl.2026-09-05` etc.). The directory is created on
+  startup and ignored by git.
+- Stdout: mirrored to stdout, so it also shows up in `journalctl -u kiteapp`.
+
+The app rotates this file itself. Do **not** add it to the logrotate stanza
+under [Log Rotation](#log-rotation), or the two will fight over the file.
+
+### Configuration
+
+All settings are `KITEAPP_`-prefixed env vars (in `~/.env` or the systemd unit):
+
+```bash
+KITEAPP_ACTIVITY_LOG_ENABLED=true
+KITEAPP_ACTIVITY_LOG_FILE=/var/log/kiteapp/activity.jsonl   # default: data/logs/activity.jsonl
+KITEAPP_ACTIVITY_LOG_RETENTION_DAYS=30
+KITEAPP_ACTIVITY_LOG_STDOUT=true
+KITEAPP_ACTIVITY_LOG_ANONYMIZE_IPS=false   # true: IPv4 last octet zeroed, IPv6 truncated to /48
+KITEAPP_ACTIVITY_LOG_EXCLUDE_PATHS='["/health","/docs","/docs/oauth2-redirect","/redoc","/openapi.json"]'
+```
+
+If you point the file at `/var/log/kiteapp/`, make sure that directory is owned
+by the `kiteapp` user (see [Create Log Directory](#3-create-log-directory)).
+
+**Privacy note:** IP addresses are personal data under GDPR. Either keep the
+retention short and mention the logging in the site's privacy note, or set
+`KITEAPP_ACTIVITY_LOG_ANONYMIZE_IPS=true`.
+
+### Reading the log
+
+```bash
+# Live tail
+tail -f ~/data/logs/activity.jsonl
+
+# Requests per unique IP today
+jq -r .ip ~/data/logs/activity.jsonl | sort | uniq -c | sort -rn | head
+
+# Most requested spot detail pages
+jq -r 'select(.path | test("^/spots/[^/]+$")) | .path' ~/data/logs/activity.jsonl | sort | uniq -c | sort -rn | head
+
+# Slowest requests
+jq -c 'select(.duration_ms > 500)' ~/data/logs/activity.jsonl
+```
+
+---
+
 ## Troubleshooting
 
 ### Backend Issues
@@ -614,8 +674,8 @@ ps aux | grep kiteapp
 **Slow API responses:**
 
 ```bash
-# Check backend logs for slow requests
-sudo tail -f /var/log/kiteapp/access.log
+# Check backend activity log for slow requests (duration_ms field)
+tail -f ~/data/logs/activity.jsonl
 
 # Check nginx logs
 sudo tail -f /var/log/nginx/access.log
@@ -713,6 +773,7 @@ npm update
 | `/etc/nginx/sites-available/kiteapp` | Nginx configuration |
 | `/etc/systemd/system/kiteapp.service` | Systemd service file |
 | `/var/log/kiteapp/` | Application logs |
+| `/home/kiteapp/data/logs/activity.jsonl` | Request activity log (JSON lines, rotated daily) |
 | `/var/log/nginx/` | Nginx logs |
 
 ### Essential Commands
