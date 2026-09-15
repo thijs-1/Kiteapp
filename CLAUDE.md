@@ -29,6 +29,8 @@ npm run lint                   # ESLint
 ```bash
 .\venv\Scripts\python -m scripts.build_airports_csv            # Rebuild data/airports.csv from OurAirports
 .\venv\Scripts\python -m scripts.generate_sitemap              # Regenerate frontend/public/sitemap.xml from spots.pkl
+.\venv\Scripts\python -m scripts.prune_windy_spots --dry-run   # Rank spots by windiness, write data/processed/spot_windiness.csv
+.\venv\Scripts\python -m scripts.prune_windy_spots             # Keep the 3000 windiest spots; prune spots.pkl + all histograms (backup in data/backup/)
 .\venv\Scripts\python -m data_pipelines.enrich_spots           # One-time: add country + nearest-airport info to spots
 .\venv\Scripts\python -m data_pipelines.main --max-cells 1     # Test with 1 grid cell
 .\venv\Scripts\python -m data_pipelines.main --cleanup         # Full run, delete raw files after
